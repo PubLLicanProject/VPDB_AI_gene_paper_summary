@@ -16,7 +16,7 @@ get_alias_url = "https://plasmodb.org/plasmo/service/record-types/gene/records"
 get_alias_project = "PlasmoDB"
 
 #  The sections of PubMed documents that are relevant for gene curation.
-pubmed_sections = ['TITLE', 'FIG', 'TABLE', 'ABSTRACT', 'INTRO',  'RESULTS','CONCL']
+pubmed_sections = ['FIG', 'TABLE', 'RESULTS', 'CONCL', 'DISCUSSION', 'SUPPL'] # removed title, abstract, intro and added supplementary
 
 open_ai_model = "gpt-4o"
 max_tokens = 16384
@@ -29,7 +29,7 @@ model_temp = 0
 #  3) "short_summary": Provide a short summary for display,
 #  4) "title": Provide a title for display.
 
-
+# NB: prompts subject to change depending on final testing
 defaultSystem = "You are a systematic gene curation assistant for scientific publications.  Your output will be used verbatim. Do not include any commentary, explanations, apologies, or disclaimers. Only return the final result as plain text."
 
 global_prompts = {"extract": "From the text given, extract and quote all of the information which is related to [gene]. Quote all specific results, data, inferences or conclusions that are relevant to this specific gene.  But do not infer activity based on other genes, focus only on this specific gene product. ",
