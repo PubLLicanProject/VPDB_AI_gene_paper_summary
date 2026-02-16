@@ -1,63 +1,62 @@
-# VPDB_AI_gene_paper_summary
+# Gene Product Description Pipeline
 
-**AI Summarisation Example for Genes and Papers**  
-This project demonstrates how to use AI to generate summaries of scientific literature relevant to specific genes 
+An LLM-powered automated pipeline for generating gene product descriptions from scientific literature, with support for multi-model comparison.
 
----
+## Overview
 
-## Requirements
+This pipeline automates the extraction of gene-specific information from research papers and generates standardised product descriptions (PDs) using large language models (LLMs). It supports multiple workflow stages and comprehensive testing across different LLM providers.
 
-- Python 3.x
-- OpenAI python library
-- OpenAI API key
+## Features
 
-Set your OpenAI API key as an environment variable before running the script, for example:
+- **Multi-stage workflow**: Summary generation → PD brainstorming → PD verification
+- **Multi-model support**: Test across Claude, GPT, Gemini, DeepSeek, and more (via OpenRouter or Anthropic/OpenAI directly)
+- **PubMed integration**: Automatic paper retrieval and parsing from PMC open-access papers
+- **VEuPathDB integration**: Gene synonym retrieval for comprehensive searching (get aliases via API)
+- **GO evidence code assignment (beta)**: Evidence code assignments are being tested
+- **Comprehensive testing**: Pipeline variation testing and model comparisons enabled
 
+## Installation
+
+### Prerequisites
+
+- Python 3.8+
+- API keys for LLM providers (Anthropic, OpenAI, OpenRouter)
+
+### Setup
+
+1. Clone the repository:
 ```bash
-export OPENAI_API_KEY=your_api_key_here
+git clone https://github.com/PubLLicanProject/VPDB_AI_gene_paper_summary.git
+cd VPDB_AI_gene_paper_summary
 ```
 
----
-
-## Getting Started
-
-Clone the repository and run the script:
-
+2. Install dependencies:
 ```bash
-python main.py
+pip install -r requirements.txt
 ```
 
-This will generate a summary for:
-
-- **Gene ID**: `PF3D7_1133400`  
-- **PubMed ID**: `27128092`  
-(Taken from user comments as the default test case)
-
----
-
-## Usage
-
-To summarize a paper for a specific gene, use the following syntax:
-
+3. Create a `.env` file with your API keys:
 ```bash
-python main.py <gene_id> <pubmed_id>
+ANTHROPIC_API_KEY=your_anthropic_key
+OPENAI_API_KEY=your_openai_key
+OPENROUTER_API_KEY=your_openrouter_key
 ```
 
-### Example:
+4. Prepare your data:
+- Place your test set CSV in `curated_data/`
 
-```bash
-python main.py PF3D7_1133400 27128092
+Opional - Add example PDs to `curated_data/example_PDs.txt`
+NB: only needed if running PD recommendation base don set of examples. 
+
+## Quick Start
+
+```python
+from single_pair_pipeline_workflow import run_pipeline
+
+# Run full pipeline for a paper-gene pair
+result = run_pipeline(pmid="12345678", gene_id="PF3D7_0810800")
 ```
 
----
+## License
 
-## 📚 Notes
-
-- Make sure your `OPENAI_API_KEY` is set before running the script.
-- For use with gene and paper data from [PlasmoDB](https://plasmodb.org) and [PubMed](https://pubmed.ncbi.nlm.nih.gov).
-
----
-
-## 📄 License
-
-MIT License. See `LICENSE` file for details.
+[PLACEHOLDER]
