@@ -1,0 +1,200 @@
+ATP-dependent RNA helicase mak5, putative
+translocon component PTEX150
+myosin G
+Putative cell wall glycosyl hydrolase
+phytoene synthase, putative
+Putative glycosyl transferase
+leucine-rich repeat protein
+zinc finger protein, putative
+armadillo repeats only protein ARO
+flavoprotein subunit of succinate dehydrogenase
+AKAP-like protein
+Mitoribosomal LSU assembly factor 29
+Putative nucleosome assembly protein
+XPMC2 protein
+Snf7, putative
+ATP synthase F1, alpha subunit
+trypsin domain-containing protein
+leucine zipper-like transcriptional regulator
+Gas41, putative
+putative pre-rRNA-processing protein PNO1
+SAG-related sequence SRS36C
+Polyprenyl transferase pyr6
+B-box zinc finger domain-containing protein
+LINE-like reverse transcriptase
+serine esterase, putative
+Flagellum attachment zone protein 31
+palmitoyltransferase DHHC17
+putative Ras-related protein Rab2BV
+TAX-1
+DNA-directed RNA polymerases II subunit, putative
+tyrosine recombinase
+inositol 1,4,5-trisphosphate receptor
+DNA repair and recombination helicase protein PIF6
+RWD domain-containing protein
+zinc finger protein 36 family 3 protein
+Phosphoseryl-tRNA Kinase, putative
+intraflagellar transport protein 81
+bradyzoite formation deficient protein BFD2
+stomatin-like protein, putative
+rhoptry neck protein RON1
+ribosome biogenesis protein TSR3, putative
+Putative V-type ATPase, B subunit
+malate dehydrogenase-related
+Ortholog(s) have protein complex scaffold activity
+aquarius, putative
+exosome complex component RRP41
+STOP axonemal protein
+aspartate-tRNA ligase
+AGC essential kinase 1
+putative DNA ligase (NAD+)
+peroxisomal membrane protein pex3, putative
+protein YOP1, putative
+replication factor C subunit 3, putative
+asparagine synthetase, putative
+t-complex protein beta subunit
+putative histone H4
+mitochondrial ribosomal protein L33
+Ortholog(s) have hyphal septin ring localization
+ribosomal protein RPL28
+YTH domain-containing protein 1, putative
+Vps23 core domain containing protein, putative
+BILBO1 hook associated linker protein
+putative DNA topoisomerase 2
+putative eukaryotic initiation factor-2 gamma
+SacI domain-containing protein
+Predicted DDE1 transposon-related ORF
+signal recognition particle subunit SRP14
+elongation factor G
+Microtubule-associated repetitive protein 2
+Cytoskeleton-associated protein 62 kDa
+GYF domain-containing protein, putative
+AP2 domain transcription factor AP2VIIa-8
+kinesin-II 85 Kd subunit, putative
+apicortin
+Molecular chaperone
+patatin-like phospholipase PL2
+ferredoxin NADP+ oxidoreductase FNR
+Gem-associated protein 2, putative
+Putative nucleoside diphosphate kinase
+PGAP1 family protein
+G-patch domain-containing protein
+T-complex protein 1 subunit gamma
+Bardet-Biedl syndrome 8 protein
+aurora kinase
+diphthine methyltransferase, putative
+Putative phosphoserine phosphatase
+Autophagy-related protein 9, putative
+40S ribosomal protein S27
+zinc finger, zz type domain-containing protein
+queuine tRNA-ribosyltransferase, putative
+septum formation protein maf, putative
+SRP72 RNA-binding domain-containing protein
+RNA pseudouridylate synthase, putative
+Putative beta glucosidase
+proliferating cell nuclear antigen 2
+KOW motif domain-containing protein
+tubulin binding cofactor A protein
+Putative 1-phosphatidylinositol 4-kinase
+inositol-1(or 4)-monophosphatase, putative
+transcription initiation factor IIB
+YEATS family, putative
+bax inhibitor 1, putative
+TrkA-N domain containing protein, putative
+putative peptidyl-prolyl cis-trans isomerase E
+putative splicing factor 3b, subunit 3, 130kD
+Cytochrome c oxidase copper chaperone, related
+Niemann-Pick type C1-related protein
+putative DNA topoisomerase III beta-1
+cold-shock protein
+54S ribosomal protein L4, mitochondrial, putative
+Putative acid phosphatase, phoB-regulated
+acyl-CoA-binding protein, putative
+emodin anthrone oxidase
+NAD-binding domain 4 domain-containing protein
+prefoldin, putative
+salivary gland epimastigote 1
+peptidyl-prolyl cis-trans isomerase, putative
+putative peptidase M16 family potein
+Plasma membrane fusion protein prm1, putative
+putative Ras-related protein Rab-5C
+myosin heavy chain kinase A, putative
+F5/8 type C domain-containing protein
+zinc finger protein, FYVE/PHD-type, putative
+Divergent AAA domain containing protein, putative
+Surp module, putative
+palmitoyltransferase DHHC1
+MtN3/saliva family protein
+UTP-glucose-1-phosphate uridylyltransferase
+derlin-1
+PHD finger/ GNAT domain protein 5
+ras-related protein RAB5B
+Kinetochore interacting protein 1
+Protein serine/threonine kinase
+histone deacetylase
+protein dopey homolog, putative
+putative syntaxin 5
+upregulated in late gametocytes ULG8
+3'-5' exonuclease domain-containing protein
+glyceraldehyde-3-phosphate dehydrogenase GAPDH1
+Spastin, putative
+hydrolase, alpha/beta fold family, putative
+protein phosphatase PPM19, putative
+Iron-sensing transcriptional repressor sreA
+Phosphoethanolamine-cytidyltransferase
+spindle pole body protein, putative
+dynein light chain 2
+Predicted protein serine/threonine kinase
+virulence-associated protein 1
+Outer row dynein-assembly protein 7
+Putative monooxygenase (FAD)
+Glucose-6-phosphate 1-epimerase, putative
+histidine-rich protein II
+protein phosphatase 2A, putative
+Proteasome subunit alpha type 3
+apocytochrome b, putative
+kinetoplast-associated protein 6
+chaperone binding protein, putative
+GDSL Lipase/Acylhydrolase family protein
+50S ribosomal protein L23, putative
+paraflagellar rod protein
+Fumigermin synthase
+putative peptidyl-prolyl isomerase FKBP12
+kinesin-8, putative
+subtilisin-like protease 2
+Sir2-related protein 2, putative
+Bifunctional NAD(P)H-hydrate repair enzyme
+ubiquitin domain-containing protein DSK2
+Zn-finger domain protein, putative
+1,4-alpha-glucan-branching enzyme
+arginine--tRNA ligase
+cysteine peptidase, Clan CA, family C19, putative
+Putative aspartate aminotransferase
+alba 1
+Kinetoplast poly(A) polymerase 2
+DIP13 homolog, putative
+Eukaryotic initiation factor 5A
+ATP-binding protein
+isocitrate dehydrogenase 1
+phosphatidylserine synthase
+Zinc finger protein, C3H1 type-like
+UMP-CMP kinase
+Putative multidrug resistant protein
+rho guanyl-nucleotide exchange factor
+putative mannosyltransferase
+mitochondrial ribosomal protein l30
+SAG-related sequence SRS38D
+choline kinase
+serine protease
+mitochondrial DNA ligase homolog, LIG k-alpha
+cell cycle associated protein, putative
+metallo-beta-lactamase superfamily protein
+Transcriptional regulator crzA
+40S ribosomal protein S5, putative
+Basalin
+thioredoxin-like protein
+Nucleoporin NUP76
+V-type proton ATPase subunit B
+histone H2Ba
+dense granule protein GRA72
+RNA-binding protein 29, putative
