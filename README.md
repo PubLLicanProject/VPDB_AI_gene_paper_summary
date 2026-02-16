@@ -19,7 +19,7 @@ This pipeline automates the extraction of gene-specific information from researc
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.x+
 - API keys for LLM providers (Anthropic, OpenAI, OpenRouter)
 
 ### Setup
