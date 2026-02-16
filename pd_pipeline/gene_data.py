@@ -6,7 +6,7 @@ Interfaces with VEuPathDB for gene synonyms and alias information.
 
 import requests
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 def get_vpdb_alias(gene_id: str, host_db: str) -> List[str]:
     """Fetch aliases from VEuPathDB."""
@@ -126,3 +126,21 @@ def check_gene_in_text(gene_id: str, paper: str, host_db: str) -> Tuple[bool, in
     found = total_mentions > 0
 
     return found, total_mentions
+
+
+def gene_to_prompt(gene, genes):
+    """
+    Converts a gene ID and a list of synonyms into a readable string for prompts.
+
+    Args:
+        gene (str): The gene ID.
+        genes (list of str): A list of synonyms for the gene.
+
+    Returns:
+        str: A formatted string that includes the gene ID and its synonyms.
+    """
+
+    if len(genes) ==0:
+        return gene
+    else:
+        return gene + " (also known as " + " or ".join(genes) +")"

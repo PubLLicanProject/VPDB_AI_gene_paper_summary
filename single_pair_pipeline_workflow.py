@@ -149,7 +149,7 @@ def collect_bullets(summary_json, wanted_status={"PASS", "WARN", "NEW"}):
     return []
 
 
-def generatePDs(summary_json: Dict[Any, Any], gene_text: str, n_pds: int = N_PDs) -> Tuple[Optional[dict], dict, Optional[float]]:
+def generatePDs(summary_json: Dict[Any, Any], gene_text: str, n_pds: int = N_PDS) -> Tuple[Optional[dict], dict, Optional[float]]:
     """
     Generate product descriptions from gene summary.
 

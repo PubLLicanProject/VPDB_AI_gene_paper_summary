@@ -14,9 +14,9 @@ from typing import List, Dict, Tuple
 
 from config.models import MODELS_TO_TEST, TEST_SET_PATH, OUT_DIR
 from single_pair_pipeline_workflow import getGeneSummary, generatePDs, verifyPDs
-from .pubmed import get_pubmed_json, parse_pubmed_json
-from .gene_data import get_gene_synonyms, gene_to_prompt
-from .utils import load_status, save_status, check_if_ok
+from pd_pipeline.pubmed import get_pubmed_json, parse_pubmed_json
+from pd_pipeline.gene_data import get_gene_synonyms, gene_to_prompt
+from pd_pipeline.utils import load_status, save_status, check_if_ok
 
 def load_test_set(subset_file=TEST_SET_PATH):
     """Load the 30 selected representative paper-gene pairs"""
