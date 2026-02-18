@@ -76,6 +76,8 @@ python main.py single --pmid 12345678 --gene_id PF3D7_0810800 --host_db plasmodb
 ## Post-processing
 To extract results and score PDs, the scripts in post_processing/ can be used
 
+## Online tool hosted on HPC
+Back-end is slightly outdated, but code is in PubGene_back_end for reference 
 
 ## License
 MIT License
