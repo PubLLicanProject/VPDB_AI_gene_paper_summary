@@ -568,7 +568,7 @@ def main():
         "--gene_id",
         type=str,
         default="Tb927.10.4200",
-        help="Gene locus tag to process (default: Tb927.10.4200)"
+        help="Gene ID from VPDB to process (default: Tb927.10.4200)"
     )
     parser.add_argument(
         "--host_db",
