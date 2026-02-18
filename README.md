@@ -72,6 +72,11 @@ python main.py single --pmid 12345678 --gene_id PF3D7_0810800 --host_db plasmodb
 # Single pair – summary only
 python main.py single --pmid 12345678 --gene_id PF3D7_0810800 --host_db plasmodb --no-generate-pd
 
+```
+## Post-processing
+To extract results and score PDs, the scripts in post_processing/ can be used
+
+
 ## License
 MIT License
 
