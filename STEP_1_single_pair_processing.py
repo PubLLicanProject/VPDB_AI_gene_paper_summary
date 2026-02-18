@@ -628,10 +628,3 @@ if __name__ == "__main__":
     main()
 
 
-import sys
-
-# Set the command-line arguments
-sys.argv = ['STEP_1_single_pair_processing.py', '--host_db', 'PlasmoDB', '--pubmed_id', '25011111', '--gene_id', 'PF3D7_1355700']
-
-# Now call main()
-main()
