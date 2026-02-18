@@ -1,0 +1,155 @@
+{
+  "getGeneSummary": {
+    "PF3D7_1355700": {
+      "gene_ID": "PF3D7_1355700",
+      "claude-sonnet-4-20250514": {
+        "model": "claude-sonnet-4-20250514",
+        "success": true,
+        "data": {
+          "Aliases_in_paper": [
+            "NIF3"
+          ],
+          "GeneSummary": [
+            {
+              "bullet_point": "NIF3 is classified as one of the NIF-like phosphatases in the Plasmodium phosphatome and is part of a family where the common substrate is the C-terminal domain of RNA polymerase II.",
+              "evidence_location": "Results section - paragraph 1 and Discussion section",
+              "supporting_quotes": [
+                "PFam domains were used to define protein sets with similarity to PPP, PTP, PPM, NIF-like, and PTP-like A families.",
+                "the inability to delete three FCPs (NIF2, NIF3, and NIF4) is not surprising, as the common substrate of FCPs is the C-terminal domain of RNA polymerase II"
+              ]
+            },
+            {
+              "bullet_point": "NIF3 was refractory to deletion attempts, suggesting it is essential for parasite survival during asexual blood stage development.",
+              "evidence_location": "Results section and Discussion section",
+              "supporting_quotes": [
+                "A total of 178 individual gene deletion attempts were performed (at least 4 per gene; Table S1), resulting in successful deletion of 14 PPs (47%)",
+                "the inability to delete three FCPs (NIF2, NIF3, and NIF4) is not surprising"
+              ]
+            },
+            {
+              "bullet_point": "NIF3 has conserved metal coordinating residues and phosphate-binding residues based on computational structural analysis using available experimental template structures.",
+              "evidence_location": "Results section - paragraph 2",
+              "supporting_quotes": [
+                "computational structural analysis has further supported the presence and correct position of phosphate and metal-coordinating residues in all PPPs, NIFs, and PPMs"
+              ]
+            }
+          ],
+          "AdditionalInferences": [
+            "As a NIF-like phosphatase targeting RNA polymerase II CTD, NIF3 likely plays a critical role in transcriptional regulation, which would explain why it cannot be deleted without compromising parasite viability",
+            "The essential nature of NIF3 suggests it may be a potential drug target, as it appears to be required for basic cellular functions in Plasmodium parasites"
+          ],
+          "ShortSummary": "NIF3 is an essential NIF-like phosphatase in Plasmodium that targets the C-terminal domain of RNA polymerase II and cannot be deleted, indicating its critical role in parasite survival.",
+          "only_in_passing": false
+        },
+        "usage": {
+          "input": 60,
+          "output": 623,
+          "total": 683
+        },
+        "seconds": 15.08502719993703
+      }
+    }
+  },
+  "generatePDs": {
+    "PF3D7_1355700": {
+      "gene_ID": "PF3D7_1355700",
+      "claude-sonnet-4-20250514": {
+        "model": "claude-sonnet-4-20250514",
+        "success": true,
+        "data": {
+          "gene_id": "PF3D7_1355700",
+          "short_summary": "NIF3 is a putative essential NIF-like phosphatase that likely targets the C-terminal domain of RNA polymerase II and contains conserved metal coordinating and phosphate-binding residues critical for parasite survival during asexual blood stage development.",
+          "PDs": [
+            {
+              "description": "NIF-like phosphatase NIF3, putative",
+              "evidence_code": "ISA",
+              "code_reason": "Classification based on sequence similarity to NIF-like phosphatases in the Plasmodium phosphatome"
+            },
+            {
+              "description": "RNA polymerase II C-terminal domain phosphatase, putative",
+              "evidence_code": "ISA",
+              "code_reason": "Predicted function based on family classification where the common substrate is RNA polymerase II C-terminal domain"
+            },
+            {
+              "description": "essential protein, putative",
+              "evidence_code": "IMP",
+              "code_reason": "Gene was refractory to deletion attempts, suggesting essentiality for parasite survival during asexual blood stage development"
+            }
+          ]
+        },
+        "usage": {
+          "input": 2430,
+          "output": 297,
+          "total": 2727
+        },
+        "seconds": 5.1395229999907315
+      }
+    }
+  },
+  "verifyPDs": {
+    "PF3D7_1355700": {
+      "gene_ID": "PF3D7_1355700",
+      "claude-sonnet-4-20250514": {
+        "model": "claude-sonnet-4-20250514",
+        "success": true,
+        "data": {
+          "gene_id": "PF3D7_1355700",
+          "RPD": {
+            "verification_status": "SUPPORTED",
+            "description": "RNA polymerase II C-terminal domain phosphatase NIF3",
+            "evidence_code": "ISA",
+            "code_reason": "Classification based on sequence similarity to NIF-like phosphatases and known function of FCPs targeting RNA polymerase II CTD",
+            "audit_status": "EDITED",
+            "audit_reason": "Combined specificity with gene symbol for disambiguation"
+          },
+          "APDs": [
+            {
+              "verification_status": "SUPPORTED",
+              "description": "NIF-like phosphatase NIF3",
+              "evidence_code": "ISA",
+              "code_reason": "Gene classified into NIF-like phosphatase family based on sequence similarity to known NIF domains",
+              "audit_status": "EDITED",
+              "audit_reason": "Removed putative as classification is well-supported"
+            },
+            {
+              "verification_status": "SUPPORTED",
+              "description": "essential protein NIF3",
+              "evidence_code": "IMP",
+              "code_reason": "Gene was refractory to deletion attempts, indicating essentiality during asexual blood stage development",
+              "audit_status": "EDITED",
+              "audit_reason": "Removed putative and added gene symbol for disambiguation"
+            }
+          ]
+        },
+        "usage": {
+          "input": 159,
+          "output": 354,
+          "total": 513
+        },
+        "seconds": 7.126926800003275
+      }
+    }
+  },
+  "selectPD": {
+    "PF3D7_1355700": {
+      "gene_ID": "PF3D7_1355700",
+      "claude-sonnet-4-20250514": {
+        "model": "claude-sonnet-4-20250514",
+        "success": true,
+        "data": {
+          "gene_id": "NIF3",
+          "recommended_product": {
+            "description": "NIF-like phosphatase NIF3",
+            "reasoning": "Matches example style with protein family classification and gene name, avoiding overly specific functional details while maintaining appropriate length."
+          }
+        },
+        "usage": {
+          "input": 3463,
+          "output": 74,
+          "total": 3537
+        },
+        "seconds": 2.880492000025697
+      }
+    }
+  }
+}
