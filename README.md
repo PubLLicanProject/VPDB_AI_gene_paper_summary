@@ -63,23 +63,6 @@ run_pipeline(pmid="12345678", gene_id="PF3D7_0810800", host_db="plasmodb")
 run_pipeline(pmid="12345678", gene_id="PF3D7_0810800", host_db="plasmodb", generate_pd=False)
 ```
 
-```python
-from main import run_tests
-
-# Run model comparison across all configured models
-run_tests(test="model_comparison", yes=True)
-
-# Compare pipeline configurations (e.g. with/without summary verification)
-run_tests(test="variation_comparison")
-```
-
-```python
-from main import run_batch
-
-# Batch-process a CSV of paper–gene pairs
-results = run_batch("gene_paper_pairs.csv")
-```
-
 ### Command Line
 
 ```bash
@@ -88,17 +71,6 @@ python main.py single --pmid 12345678 --gene_id PF3D7_0810800 --host_db plasmodb
 
 # Single pair – summary only
 python main.py single --pmid 12345678 --gene_id PF3D7_0810800 --host_db plasmodb --no-generate-pd
-
-# Model comparison testing (skip confirmation prompt with --yes)
-python main.py test --test model_comparison --yes
-
-# Pipeline variation testing (interactive confirmation)
-python main.py test --test variation_comparison
-
-# Batch processing
-python main.py batch --csv gene_paper_pairs.csv
-```
-
 
 ## License
 MIT License
