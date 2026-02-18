@@ -1,12 +1,53 @@
-"""
-Prompt templates and JSON schemas for the PD pipeline.
+import os
+import time
+import json
+from pathlib import Path
+from openai import OpenAI  # if processing using GPT
+from anthropic import Anthropic  # if processing suing Claude
+from dotenv import load_dotenv
+from pipeline.utils import *
+from pipeline.utils import (_verified_to_select_candidates,
+    _extract_usage,
+    _to_responses_input,
+    _responses_supports_temperature)
+# Load environment variables from .env file
+load_dotenv() #- include API KEys
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+#######################################################################################################################
+#                                         CONSTANTS TO CONFIGURE                                                          #
+#######################################################################################################################
+OUT_DIR = Path("./out/cache") # where .json status files should be stored
+EXAMPLE_PDS_PATH = './curated_data/example_PDs_2025_07_10.txt'
 
-Contains comprehensive prompts for:
-- Gene summary generation
-- Product description brainstorming
-- PD selection
-"""
+HTTP_TIMEOUT=180
 
+# general pipeline and model config
+N_PDs = 3 # PDs to brainstorm
+N_QUOTES = 2 # quotes per bullet
+model_temp = 0 # NB: can only be set if thinking is not enabled. we use 0 to maximise consistency
+# initiate schema as empty string, each workflow stage has different schema
+JSON_SCHEMA = "" # schema as string to append to the system prompt; stored in the prompts and schema dict and will be updated for each workflow step as needed.
+
+# model choice for each pipeline step
+max_tokens = 20000  # default in Claude tester online, NB: needs lowering for openai models
+summary_llm = ["anthropic", "claude-sonnet-4-20250514"]
+summary_QC_llm = ["anthropic", "claude-sonnet-4-20250514"]
+PD_generator_llm = ["anthropic", "claude-sonnet-4-20250514"]
+PD_picker_llm = ["anthropic", "claude-sonnet-4-20250514"]
+PD_QC_llm = ["anthropic", "claude-sonnet-4-20250514"]
+# additional model to force correct JSON schema if original LLM fails; attempt this up to max_retry times
+formatter_llm = ["anthropic", "claude-sonnet-4-20250514"]
+max_retry = 3
+
+
+# some additional settings for openai reasoning models
+REASONING_EFFORT = "medium"   # options: "minimal", "low", "medium", "high"
+VERBOSITY = "low"              # options: "low", "medium", "high"
+RESPONSES_MAX_OUTPUT_TOKENS = 6000  # hard cap; adjusted to keep outputs shorter
+
+# # list of 200 example product descriptions picked at random; all 10 < characters < 50
+# with open(EXAMPLE_PDS_PATH, 'r', encoding='utf-8') as file:
+#     PD_EXAMPLES = file.read()
 #######################################################################################################################
 #                                         PROMPTS AND SCHEMA                                                          #
 #######################################################################################################################
@@ -69,7 +110,8 @@ global_prompts_and_schema = {
                         "Aliases_in_paper",
                         "GeneSummary",
                         "AdditionalInferences",
-                        "ShortSummary"
+                        "ShortSummary",
+                        "only_in_passing"
                     ],
                     "properties": {
                         "Aliases_in_paper": {
@@ -87,7 +129,6 @@ global_prompts_and_schema = {
                             "bullet_point",
                             "evidence_location",
                             "supporting_quotes",
-                            "only_in_passing"
                             ],
                             "properties": {
                                 "bullet_point": {
@@ -106,11 +147,7 @@ global_prompts_and_schema = {
                                     "maxItems": 2,
                                     "description": "Up to 2 direct quotes from the paper that support the summary bullet point."
                                 },
-                                    # NEW: add specific flag to schema
-                                "only_in_passing":{
-                                    "type": "boolean",
-                                    "description": "Flags if gene is only mentioned in passing without substantial findings - TRUE if so, FALSE if not."
-                                },
+
                             }
                         },
                         "description": "Bullet points from the <Gene Summary> section, each with its own paired evidence location and supporting quotes."
@@ -125,7 +162,12 @@ global_prompts_and_schema = {
                         "ShortSummary":{
                             "type": "string",
                             "description": "The one sentence <Short Summary> that captures key findings."
-                        }
+                        },
+                        # NEW: add specific flag to schema
+                        "only_in_passing": {
+                            "type": "boolean",
+                            "description": "Flags if gene is only mentioned in passing without substantial findings - TRUE if so, FALSE if not."
+                        },
                     },
                     "additionalProperties": False
                     },
@@ -268,7 +310,7 @@ global_prompts_and_schema = {
 
         }
     },
-#### STAGE 3: Final check - are the brainstormed  PDs supported by the original text; which is recommended?
+#### STAGE 3A: Final check - are the brainstormed  PDs supported by the original text; which is recommended?
     "verifyPDs": {
         "SystemPrompt": "ROLE: You audit gene curation records and specialise in scrutinising product descriptions\n"
                         "BACKGROUND: You will be provided a scientific paper and a set of gene product descriptions that "
@@ -490,7 +532,7 @@ global_prompts_and_schema = {
         }
 
     },
-#### STAGE 3: Selection base don examples - alternative version
+#### STAGE 3B: Selection base don examples - alternative version
     "selectPD": {
         "SystemPrompt": "ROLE: You are an expert auditor that synchronises gene product descriptions with the already "
                         "existing database.\n"
@@ -1003,3 +1045,392 @@ global_prompts_and_schema = {
         }
     },
 }
+
+
+# helper to replace portions of a prompt
+
+# helper to replace portions of a prompt
+def get_prompt_and_replace(stage_key, replacements, prompt_type = "SystemPrompt"):
+    """
+    Retrieves a specific prompt text from the global_prompts dictionary and replace [] placeholders with provided values.
+
+    Args:
+        stage_key (str): The key for the prompt in the global_prompts dictionary.
+        replacements (dict): Keys are placeholder strings in the prompt and values are the text to replace them with.
+        prompt_type (str): Whether replacements are made in "UserPrompt" or "SystemPrompt".
+
+    Returns:
+        str: The prompt text with placeholders replaced by the corresponding values from replacements.
+    """
+    # two sub-helpers to deal with numerics and when a json needs to be a string for replacemtn
+    def _stringify(value):
+        """Convert non-strings (dicts, ints, etc.) to pretty JSON strings."""
+        return value if isinstance(value, str) else json.dumps(value, indent=2)
+
+    def _replace_in_text(text):
+        for ph, val in replacements.items():
+            text = text.replace(f"[{ph}]", _stringify(val))
+        return text
+
+    raw = global_prompts_and_schema[stage_key][prompt_type]
+
+    # If we have a list of prompts as in the case of user prompts, process each element; otherwise process the single string.
+    if isinstance(raw, list):
+        return [_replace_in_text(txt) for txt in raw]
+    else:
+        return _replace_in_text(raw)
+
+
+
+def _get_http_timeout(default: int = 180) -> int:
+    """
+    Return the HTTP read-timeout in seconds. Override with OPENAI_HTTP_TIMEOUT env var.
+    """
+    import os
+    try:
+        return int(os.getenv("OPENAI_HTTP_TIMEOUT", default))
+    except Exception:
+        return default
+def _is_openai_responses_model(model: str) -> bool:
+    """
+    Return True if this OpenAI model expects the Responses API and
+    'max_completion_tokens' instead of Chat Completions 'max_tokens'.
+    """
+    prefixes = ("gpt-5", "o4", "gpt-4.1", "gpt-4o-")
+    return any(model.startswith(p) for p in prefixes)
+
+def call_prompt(provider, model, user_prompts, system_prompt, prefill_text = "{"):
+    """
+    Calls the LLM API with a list of strings and a system prompt.
+    Args:
+        provider (str): one of "anthropic", "openai", "openrouter" (via OpenAI SDK)
+        model (str): the model for use with the API, e.g. "claude-sonnet-4-20250514"
+        user_prompts (list of str): A list of strings to be sent to the API. Each will be treated as a separate user message.
+        Currently designed so any prompt that needs to be cached is always the first message.
+        For processing multiple genes of the same paper it is recommended to cache the paper text.
+        system_prompt (str): The system prompt to be used.
+
+    Returns:
+        str: The response from the LLM API.
+    """
+
+    messages = []
+    system_message = None
+    local_max_tokens = max_tokens
+    if model == "claude-3-5-haiku-20241022":
+        local_max_tokens = 8192
+    if system_prompt:
+        system_message = system_prompt  # Store system prompt separately for Claude
+
+    if len(user_prompts) > 1:
+        cache_prompt = user_prompts[0]
+        prompt = user_prompts[1]
+        if provider == "anthropic":
+            # Anthropic supports caching
+            messages.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": cache_prompt,
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {"type": "text", "text": prompt},
+                ],
+            })
+        else:
+            # OpenRouter/OpenAI: concatenate
+            messages.append({"role": "user", "content": cache_prompt + "\n\n" + prompt})
+    else:
+        prompt = user_prompts[0]
+        messages.append({"role": "user", "content": prompt})
+
+
+    # Defaults to get key from environment variable
+    if provider == "anthropic":
+        client = Anthropic()
+        # Add prefill if specified (only for Claude)
+        if prefill_text:
+            messages.append({"role": "assistant", "content": prefill_text})
+        # Create the request parameters
+        request_params = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": local_max_tokens,
+            "temperature": model_temp,
+        }
+
+        # Add system prompt if it exists
+        if system_message:
+            request_params["system"] = system_message
+
+        start = time.perf_counter()  # time the call
+        response = client.messages.create(**request_params)
+        elapsed = time.perf_counter() - start  # end time
+
+
+        result = response.content[0].text if response.content else ""
+        # If we used prefill, prepend it to the response
+        if prefill_text:
+            result = prefill_text + result
+
+        usage = _extract_usage("anthropic", response)
+        return result, usage, elapsed  # return usage and time too
+
+
+
+
+    elif provider == "openrouter":
+
+        openai_messages = []
+
+        if system_prompt:
+            openai_messages.append({"role": "system", "content": system_prompt})
+
+        openai_messages.extend(messages)
+
+        # Create OpenAI client with OpenRouter configuration - simplified
+
+        from openai import OpenAI as OpenAIClient
+
+        client = OpenAIClient(
+
+            base_url="https://openrouter.ai/api/v1",
+
+            api_key=OPENROUTER_API_KEY,
+
+            default_headers={
+
+                "HTTP-Referer": "https://github.com/yourusername",  # Optional but recommended
+
+                "X-Title": "Gene Curation Pipeline",  # Optional
+
+            }
+
+        )
+
+        start = time.perf_counter()
+
+        request_params = {
+
+            "model": model,
+
+            "messages": openai_messages,
+
+            "max_tokens": local_max_tokens,
+
+            "temperature": model_temp,
+
+            "timeout": HTTP_TIMEOUT,  # Add explicit timeout
+
+        }
+
+        # Try with reasoning first, fallback if not supported
+
+        try:
+
+            # First attempt: with reasoning/thinking enabled
+
+            response = client.chat.completions.create(
+
+                **request_params,
+
+                extra_body={
+
+                    "provider": {
+
+                        "allow_fallbacks": True,  # Allow OpenRouter to fallback if primary fails
+
+                    },
+
+                }
+
+            )
+
+        except Exception as e:
+
+            error_msg = str(e).lower()
+
+            # If reasoning not supported or other API error, retry without extras
+
+            if "reasoning" in error_msg or "extra_body" in error_msg or "provider" in error_msg:
+
+                print(f"  ⚠️  Retrying without extended params: {e}")
+
+                response = client.chat.completions.create(**request_params)
+
+            else:
+
+                raise
+
+        elapsed = time.perf_counter() - start
+
+        result = response.choices[0].message.content
+
+        # Extract usage from response
+
+        usage_obj = getattr(response, 'usage', None)
+
+        if usage_obj:
+
+            usage = {
+
+                "input": getattr(usage_obj, 'prompt_tokens', 0),
+
+                "output": getattr(usage_obj, 'completion_tokens', 0),
+
+                "total": getattr(usage_obj, 'total_tokens', 0)
+
+            }
+
+        else:
+
+            usage = {"input": 0, "output": 0, "total": 0}
+
+        return result, usage, elapsed
+
+    elif (provider == "openai"):
+
+        # Build chat-style messages first
+
+        openai_messages = []
+
+        if system_prompt:
+            openai_messages.append({"role": "system", "content": system_prompt})
+
+        openai_messages.extend(messages)
+
+        client = OpenAI()
+
+        start = time.perf_counter()
+
+        if _is_openai_responses_model(model):
+
+            # Responses API
+
+            resp_input = _to_responses_input(openai_messages)
+
+            request_params = {
+
+                "model": model,
+
+                "input": resp_input,
+
+                "instructions": system_prompt or "",
+
+                "max_output_tokens": min(local_max_tokens, RESPONSES_MAX_OUTPUT_TOKENS),
+
+                "timeout_s": _get_http_timeout(),
+
+                # Correct placement for verbosity: under "text"
+
+                "text": {
+
+                    "format": {"type": "text"},
+
+                    **({"verbosity": VERBOSITY} if VERBOSITY else {}),
+
+                },
+
+            }
+
+            # Reasoning control stays top-level
+
+            if REASONING_EFFORT:
+                request_params["reasoning"] = {"effort": REASONING_EFFORT}
+
+            # Keep temperature only if supported
+
+            if _responses_supports_temperature(model) and (model_temp is not None):
+                request_params["temperature"] = model_temp
+
+            try:
+
+                response = _openai_responses_create(client, **request_params)
+
+            except RuntimeError as e:
+
+                msg = str(e)
+
+                # If API rejects verbosity, retry once without it
+
+                if "Unknown parameter" in msg and "verbosity" in msg:
+
+                    request_params.pop("text", None)  # drop verbosity + format block
+
+                    # Minimal safe text config without verbosity
+
+                    request_params["text"] = {"format": {"type": "text"}}
+
+                    response = _openai_responses_create(client, **request_params)
+
+                else:
+
+                    raise
+
+            elapsed = time.perf_counter() - start
+
+            result = getattr(response, "output_text", "") or ""
+
+            if not result:
+
+                parts = []
+
+                for item in getattr(response, "output", []) or []:
+
+                    for c in item.get("content", []) or []:
+
+                        t = c.get("text") if isinstance(c, dict) else getattr(c, "text", None)
+
+                        if t:
+                            parts.append(t)
+
+                result = "".join(parts)
+
+            usage = _extract_usage("openai-responses", response)
+
+
+        else:
+
+            # Chat Completions API
+
+            try:
+
+                response = client.chat.completions.create(
+
+                    model=model,
+
+                    messages=openai_messages,
+
+                    max_tokens=local_max_tokens,
+
+                    temperature=model_temp,
+
+                    timeout=_get_http_timeout(),
+
+                )
+
+            except TypeError:
+
+                response = client.chat.completions.create(
+
+                    model=model,
+
+                    messages=openai_messages,
+
+                    max_tokens=local_max_tokens,
+
+                    temperature=model_temp,
+
+                )
+
+            elapsed = time.perf_counter() - start
+
+            result = response.choices[0].message.content
+
+            usage = _extract_usage("openai-chat", response)
+
+        return result, usage, elapsed
+    else:
+        raise ValueError("unsupported LLM provider, please use 'anthropic', 'openrouter', or 'openai'")
+

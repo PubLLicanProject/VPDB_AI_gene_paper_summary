@@ -8,7 +8,7 @@ This pipeline automates the extraction of gene-specific information from researc
 
 ## Features
 
-- **Multi-stage workflow**: Summary generation → PD brainstorming → PD verification
+- **Multi-stage workflow**: Summary generation → PD brainstorming → PD verification + selection (with optional summary verification and swap-out selection criteria)
 - **Multi-model support**: Test across Claude, GPT, Gemini, DeepSeek, and more (via OpenRouter or Anthropic/OpenAI directly)
 - **PubMed integration**: Automatic paper retrieval and parsing from PMC open-access papers
 - **VEuPathDB integration**: Gene synonym retrieval for comprehensive searching (get aliases via API)
@@ -20,7 +20,7 @@ This pipeline automates the extraction of gene-specific information from researc
 ### Prerequisites
 
 - Python 3.x+
-- API keys for LLM providers (Anthropic, OpenAI, OpenRouter)
+- API keys for LLM providers you intend to use (Supported: Anthropic, OpenAI, OpenRouter)
 
 ### Setup
 
@@ -42,20 +42,63 @@ OPENAI_API_KEY=your_openai_key
 OPENROUTER_API_KEY=your_openrouter_key
 ```
 
-4. Prepare your data:
-- Place your test set CSV in `curated_data/`
+4. (Optional) - If you intend to run tests, prepare your data:
+- Place your test set CSV with ground truth gene-paper pairs in `curated_data/`
 
-Opional - Add example PDs to `curated_data/example_PDs.txt`
-NB: only needed if running PD recommendation base don set of examples. 
+5. (Opional) - Add example PDs to `curated_data/example_PDs.txt`
+NB: only needed if running PD recommendation based on set of examples. 
+
 
 ## Quick Start
 
+### Python API
+
 ```python
-from single_pair_pipeline_workflow import run_pipeline
+from main import run_pipeline
 
 # Run full pipeline for a paper-gene pair
-result = run_pipeline(pmid="12345678", gene_id="PF3D7_0810800")
+run_pipeline(pmid="12345678", gene_id="PF3D7_0810800", host_db="plasmodb")
+
+# Summary generation only (skip PD stages)
+run_pipeline(pmid="12345678", gene_id="PF3D7_0810800", host_db="plasmodb", generate_pd=False)
 ```
+
+```python
+from main import run_tests
+
+# Run model comparison across all configured models
+run_tests(test="model_comparison", yes=True)
+
+# Compare pipeline configurations (e.g. with/without summary verification)
+run_tests(test="variation_comparison")
+```
+
+```python
+from main import run_batch
+
+# Batch-process a CSV of paper–gene pairs
+results = run_batch("gene_paper_pairs.csv")
+```
+
+### Command Line
+
+```bash
+# Single pair – full pipeline
+python main.py single --pmid 12345678 --gene_id PF3D7_0810800 --host_db plasmodb
+
+# Single pair – summary only
+python main.py single --pmid 12345678 --gene_id PF3D7_0810800 --host_db plasmodb --no-generate-pd
+
+# Model comparison testing (skip confirmation prompt with --yes)
+python main.py test --test model_comparison --yes
+
+# Pipeline variation testing (interactive confirmation)
+python main.py test --test variation_comparison
+
+# Batch processing
+python main.py batch --csv gene_paper_pairs.csv
+```
+
 
 ## License
 MIT License

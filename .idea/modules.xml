@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/VPDB_AI_gene_paper_summary.iml" filepath="$PROJECT_DIR$/.idea/VPDB_AI_gene_paper_summary.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/PD_PIPELINE.iml" filepath="$PROJECT_DIR$/.idea/PD_PIPELINE.iml" />
     </modules>
   </component>
 </project>

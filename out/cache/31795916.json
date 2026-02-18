@@ -1,0 +1,72 @@
+{
+  "getGeneSummary": {
+    "Tb927.10.4200": {
+      "gene_ID": "Tb927.10.4200",
+      "claude-sonnet-4-20250514": {
+        "model": "claude-sonnet-4-20250514",
+        "success": true,
+        "data": {
+          "Aliases_in_paper": [
+            "KKT24",
+            "Tb927.10.4200"
+          ],
+          "GeneSummary": [
+            {
+              "bullet_point": "KKT24 (Tb927.10.4200) was identified as a kinetochore protein candidate that co-purified with YFP-KKT22 in immunoprecipitation experiments.",
+              "evidence_location": "Figure 1d and Results section - paragraph 3",
+              "supporting_quotes": [
+                "In our purification of YFP-KKT22, there was another kinetochore protein candidate (ORF Tb927.10.4200; figure 1d).",
+                "We therefore named it KKT24."
+              ]
+            },
+            {
+              "bullet_point": "KKT24 localizes at kinetochores from S phase to anaphase, with YFP-KKT24 signals appearing as pairs of dots in metaphase.",
+              "evidence_location": "Figure 2a and Results section - paragraph 3",
+              "supporting_quotes": [
+                "We found that this protein, in fact, localized at kinetochores from S phase to anaphase (figure 2a)",
+                "Note that YFP-KKT24 signals appear as pairs of dots (indicated by asterisk)."
+              ]
+            },
+            {
+              "bullet_point": "KKT24 co-purifies with multiple KKT proteins, KKIP5, and another kinetochore protein candidate KKT25, confirming its role as a kinetochore component.",
+              "evidence_location": "Figure 2b and Results section - paragraph 3",
+              "supporting_quotes": [
+                "its immunoprecipitation confirmed specific co-purification with other kinetochore proteins (figure 2b)",
+                "KKT24 co-purifies with a number of KKT proteins, KKIP5, and another kinetochore protein candidate, KKT25."
+              ]
+            },
+            {
+              "bullet_point": "KKT24 is predicted to consist mostly of coiled coils and shares structural similarities with KKIP1, with both proteins having N-termini located at the outer region of kinetochores.",
+              "evidence_location": "Results section - paragraph 3 and Supplementary figure S3",
+              "supporting_quotes": [
+                "Both proteins are predicted to consist mostly of coiled coils (electronic supplementary material, figure S3)",
+                "their N-termini are located at the outer region of kinetochores, as judged by the formation of pairs of dots in metaphase"
+              ]
+            },
+            {
+              "bullet_point": "KKT24 is conserved among many kinetoplastids but is not found in free-living B. saltans or other eukaryotes.",
+              "evidence_location": "Table 1 and Results section - paragraph 3",
+              "supporting_quotes": [
+                "We also note that obvious orthologues for KKT24 and KKIP1 are not found in free-living B. saltans, an organism that has essentially all of KKT1\u201320 proteins (table 1)."
+              ]
+            }
+          ],
+          "AdditionalInferences": [
+            "KKT24 may function at the outer kinetochore region based on its localization pattern showing pairs of dots in metaphase, similar to KKIP1.",
+            "Despite structural similarities with KKIP1, KKT24 and KKIP1 likely do not form a stable complex based on immunoprecipitation data.",
+            "The absence of KKT24 orthologs in free-living kinetoplastids suggests it may have evolved specifically for parasitic lifestyle requirements.",
+            "KKT24's identification through KKT22 co-purification suggests these proteins may be functionally related or part of the same kinetochore subcomplex."
+          ],
+          "ShortSummary": "KKT24 (Tb927.10.4200) is a newly identified kinetochore protein in Trypanosoma brucei that localizes to the outer kinetochore region from S phase to anaphase and co-purifies with multiple KKT proteins, representing a coiled-coil containing component conserved among parasitic kinetoplastids.",
+          "only_in_passing": false
+        },
+        "usage": {
+          "input": 49,
+          "output": 1058,
+          "total": 1107
+        },
+        "seconds": 15.457578400033526
+      }
+    }
+  }
+}
