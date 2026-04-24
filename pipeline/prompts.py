@@ -1,9 +1,14 @@
 import os
 import time
+
 import json
+import requests
 from pathlib import Path
-from openai import OpenAI  # if processing using GPT
+from typing import Any, Dict, List, Optional, Tuple, Set
+from openai import OpenAI as OpenAIClient
 from anthropic import Anthropic  # if processing suing Claude
+from pipeline.cache_monitor import CacheMonitor # for tracking of usage
+
 from dotenv import load_dotenv
 from pipeline.utils import *
 from pipeline.utils import (_verified_to_select_candidates,
@@ -16,11 +21,11 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 #######################################################################################################################
 #                                         CONSTANTS TO CONFIGURE                                                          #
 #######################################################################################################################
-OUT_DIR = Path("./out/cache") # where .json status files should be stored
+# OUT_DIR = Path("./out/cache") # where .json status files should be stored
 EXAMPLE_PDS_PATH = './curated_data/example_PDs_2025_07_10.txt'
 
 HTTP_TIMEOUT=180
-
+CACHE_MONITOR = CacheMonitor(out_path=Path("./out/cache_monitor.jsonl"))
 # general pipeline and model config
 N_PDs = 3 # PDs to brainstorm
 N_QUOTES = 2 # quotes per bullet
@@ -53,7 +58,7 @@ RESPONSES_MAX_OUTPUT_TOKENS = 6000  # hard cap; adjusted to keep outputs shorter
 #######################################################################################################################
 # NEW: modified prompts to encourage species information being taken into account, author-assigned PD are high prio,
 # and evidence codes are carefully selected
-
+UserPrompts = Union[str, List[str]]
 # NEW 2: added explicit boolean flag in summary schema for pre-filtering - only genes not mentioned in passing will get PD generated.
 
 global_prompts_and_schema = {
@@ -100,7 +105,7 @@ global_prompts_and_schema = {
         "Remember: Focus exclusively on the specified gene. Be precise about distinguishing direct evidence from analytical inferences.",
 
         "UserPrompts": [
-            "Do not respond to this message. Here is the paper text: \n [PAPER_TEXT]",
+            "Here is the paper text: \n [PAPER_TEXT]",
             "Please generate a summary for [GENE] based on the supplied paper text."
         ],
 
@@ -436,7 +441,7 @@ global_prompts_and_schema = {
                         "Respond in JSON using the folloowing schema:\n"
                         "[JSON_SCHEMA]",
         "UserPrompts": [
-            "Do not respond to this message. Here is the paper text: \n [PAPER_TEXT]",
+            "Here is the paper text: \n [PAPER_TEXT]",
             "The gene of interest is [GENE]. Here are the suggested PDs:\n"
             "<suggested_descriptions>\n"
             "[PDs]\n"
@@ -916,7 +921,7 @@ global_prompts_and_schema = {
                          "- Focus on gene-specific information, not general biological concepts\n",
 
         "UserPrompts": [
-            "Do not respond to this message. Here is the paper text: \n [PAPER_TEXT]",
+            "Here is the paper text: \n [PAPER_TEXT]",
             "Here is the draft summary for [GENE]:\n[SUMMARY]\n\nScrutinise it as per the system instructions and output only valid JSON."
             ],
 
@@ -978,7 +983,7 @@ global_prompts_and_schema = {
              "additionalProperties": False
            }
     },
-#### STAGE 4 (NOT TESTED MUCH YET) : Merge all gene summaries from multiple papers for a gene to generate lit-wide summary
+#### STAGE 4.1 (NOT TESTED MUCH YET) : Merge all gene summaries from multiple papers for a gene to generate lit-wide summary
 "mergeGeneSummaries": {
         "SystemPrompt":
             "ROLE: You are a senior curator synthesising findings for ONE gene across multiple publications.\n"
@@ -1044,6 +1049,408 @@ global_prompts_and_schema = {
             "additionalProperties": False
         }
     },
+    # STAGE 4.2 - evaluate user comment against LLM gene summary
+"evaluateUserCommentAlignment": {
+        "SystemPrompt":
+            """
+        You are evaluating how well a pipeline-generated gene annotation matches a user-submitted comment.
+        
+        Your job is NOT to determine biological truth from the paper. You do NOT have access to the original paper text.
+        Therefore:
+        - do NOT judge whether the pipeline is factually correct against the paper,
+        - do NOT label the pipeline as overclaiming or unsupported by evidence,
+        - do NOT propose rewritten comments, edits, or replacement curator text.
+        
+        Instead, evaluate:
+        1. how informative and usable the user comment is as a comparison target,
+        2. how well the pipeline outputs align with the user comment,
+        3. whether differences are mostly due to vagueness, scope mismatch, entity mismatch, or specificity mismatch,
+        4. whether the pipeline output appears more informative or more useful for a database submission workflow.
+        
+        Return ONLY valid JSON matching the schema exactly.
+        
+        Important rules:
+        - Treat the user comment as a potentially imperfect reference, not guaranteed ground truth.
+        - Distinguish true contradiction from differences in specificity, scope, naming granularity, or information density.
+        - If the user comment is very short, title-like, vague, family-level, or otherwise low-information, say so explicitly.
+        - If the pipeline output is more precise, more informative, or more actionable than the user comment, capture that explicitly.
+        - Use only the provided inputs. Do not infer facts from outside knowledge.
+        - "Product description" is only relevant when IS_NAME_PRODUCT is TRUE and a non-NONE product description is provided.
+        
+        Scoring guide:
+        - 0 = not assessable / not applicable
+        - 1 = weak
+        - 2 = partial / mixed
+        - 3 = strong
+        
+        Interpretation guide:
+        - comment_scope_level / pipeline_scope_level:
+          - "family": broad family/group label
+          - "subfamily": narrower but not exact gene/protein identity
+          - "specific_gene": exact gene/protein-level annotation
+          - "unclear": cannot determine
+        - entity_match_level:
+          - "exact": same specific entity
+          - "alias_or_near_match": likely same entity but naming differs
+          - "same_family_different_member": same family but different specific member
+          - "unclear": not enough evidence
+          - "different_entity": likely different entity
+        - mismatch_primary_cause:
+          - "none": no important mismatch
+          - "comment_too_vague": user comment too weak/vague to compare well
+          - "comment_scope_too_broad": comment is broader than pipeline output
+          - "comment_scope_too_narrow": comment is narrower than pipeline output
+          - "same_claim_different_specificity": same underlying claim, specificity mismatch
+          - "entity_mismatch": likely different entity/member than the target
+          - "pipeline_missed_core_point": pipeline omitted the main point of the comment
+          - "true_contradiction": pipeline and comment genuinely conflict
+          - "insufficient_information": cannot determine cause
+        - curation_decision:
+          - "prefer_pipeline": pipeline output appears more useful for submission/integration
+          - "prefer_user_comment": user comment appears more useful for submission/integration
+          - "merge_or_review": both have value or mismatch needs curator attention
+          - "insufficient_reference": user comment is too weak to serve as a useful comparison target
+        - review_priority:
+          - "low": mostly aligned or harmless mismatch
+          - "medium": meaningful ambiguity or specificity mismatch
+          - "high": likely contradiction, entity mismatch, or major loss of meaning
+        
+        Do not output markdown. Return JSON only.
+        
+        [JSON_SCHEMA]
+        """,
+        "UserPrompts": [
+        """
+        Evaluate the following user comment against the pipeline outputs.
+        
+        Gene ID: [GENE_ID]
+        Database: [DATABASE]
+        Organism: [ORGANISM]
+        Comment ID: [COMMENT_ID]
+        Categories: [CATEGORIES]
+        PubMed IDs: [PUBMED_IDS]
+        Single PMID only: [IS_SINGLE_PMID]
+        Name/product category: [IS_NAME_PRODUCT]
+        
+        User comment headline:
+        [HEADLINE]
+        
+        User comment content:
+        [CONTENT]
+        
+        Pipeline short summary:
+        [SHORT_SUMMARY]
+        
+        Pipeline extended summary:
+        [EXTENDED_SUMMARY]
+        
+        Pipeline product description:
+        [PRODUCT_DESCRIPTION]
+        """
+        ],
+    "ValidationSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "assessment_possible": {
+                "type": "boolean"
+            },
+            "assessment_limitations": {
+                "type": "string"
+            },
+            "comment_information_density_score": {
+                "type": "integer",
+                "enum": [0, 1, 2, 3]
+            },
+            "comment_information_density_label": {
+                "type": "string",
+                "enum": [
+                    "not_assessable",
+                    "low",
+                    "moderate",
+                    "high"
+                ]
+            },
+            "comment_is_title_like": {
+                "type": "boolean"
+            },
+            "comment_is_reference_quality": {
+                "type": "boolean"
+            },
+            "comment_reference_limit_reason": {
+                "type": "string",
+                "enum": [
+                    "none",
+                    "too_short",
+                    "too_vague",
+                    "title_like",
+                    "scope_too_broad",
+                    "scope_too_narrow",
+                    "entity_unclear",
+                    "insufficient_detail",
+                    "other"
+                ]
+            },
+            "comment_scope_level": {
+                "type": "string",
+                "enum": [
+                    "family",
+                    "subfamily",
+                    "specific_gene",
+                    "unclear"
+                ]
+            },
+            "pipeline_scope_level": {
+                "type": "string",
+                "enum": [
+                    "family",
+                    "subfamily",
+                    "specific_gene",
+                    "unclear"
+                ]
+            },
+            "scope_mismatch": {
+                "type": "boolean"
+            },
+            "entity_match_level": {
+                "type": "string",
+                "enum": [
+                    "exact",
+                    "alias_or_near_match",
+                    "same_family_different_member",
+                    "unclear",
+                    "different_entity"
+                ]
+            },
+            "mismatch_primary_cause": {
+                "type": "string",
+                "enum": [
+                    "none",
+                    "comment_too_vague",
+                    "comment_scope_too_broad",
+                    "comment_scope_too_narrow",
+                    "same_claim_different_specificity",
+                    "entity_mismatch",
+                    "pipeline_missed_core_point",
+                    "true_contradiction",
+                    "insufficient_information"
+                ]
+            },
+            "short_vs_headline_score": {
+                "type": "integer",
+                "enum": [0, 1, 2, 3]
+            },
+            "short_vs_headline_label": {
+                "type": "string",
+                "enum": [
+                    "not_assessable",
+                    "weak_or_unclear",
+                    "partial",
+                    "strong"
+                ]
+            },
+            "short_vs_headline_rationale": {
+                "type": "string"
+            },
+            "short_vs_content_score": {
+                "type": "integer",
+                "enum": [0, 1, 2, 3]
+            },
+            "short_vs_content_label": {
+                "type": "string",
+                "enum": [
+                    "not_assessable",
+                    "weak_or_unclear",
+                    "partial",
+                    "strong"
+                ]
+            },
+            "short_vs_content_rationale": {
+                "type": "string"
+            },
+            "extended_vs_content_score": {
+                "type": "integer",
+                "enum": [0, 1, 2, 3]
+            },
+            "extended_vs_content_label": {
+                "type": "string",
+                "enum": [
+                    "not_assessable",
+                    "weak_or_unclear",
+                    "partial",
+                    "strong"
+                ]
+            },
+            "extended_vs_content_rationale": {
+                "type": "string"
+            },
+            "pd_applicable": {
+                "type": "boolean"
+            },
+            "pd_vs_headline_score": {
+                "type": "integer",
+                "enum": [0, 1, 2, 3]
+            },
+            "pd_vs_headline_label": {
+                "type": "string",
+                "enum": [
+                    "not_applicable",
+                    "weak_or_unclear",
+                    "partial",
+                    "strong"
+                ]
+            },
+            "pd_vs_headline_rationale": {
+                "type": "string"
+            },
+            "pd_vs_content_score": {
+                "type": "integer",
+                "enum": [0, 1, 2, 3]
+            },
+            "pd_vs_content_label": {
+                "type": "string",
+                "enum": [
+                    "not_applicable",
+                    "weak_or_unclear",
+                    "partial",
+                    "strong"
+                ]
+            },
+            "pd_vs_content_rationale": {
+                "type": "string"
+            },
+            "has_contradiction": {
+                "type": "boolean"
+            },
+            "missing_core_comment_point": {
+                "type": "boolean"
+            },
+            "comment_too_vague_to_judge": {
+                "type": "boolean"
+            },
+            "pipeline_comment_more_informative": {
+                "type": "boolean"
+            },
+            "pipeline_comment_more_specific": {
+                "type": "boolean"
+            },
+            "pipeline_comment_more_actionable": {
+                "type": "boolean"
+            },
+            "would_prefer_pipeline_comment_as_annotation": {
+                "type": "boolean"
+            },
+            "pipeline_usefulness_for_submission_score": {
+                "type": "integer",
+                "enum": [0, 1, 2, 3]
+            },
+            "pipeline_usefulness_for_submission_label": {
+                "type": "string",
+                "enum": [
+                    "not_assessable",
+                    "low",
+                    "moderate",
+                    "high"
+                ]
+            },
+            "user_comment_usefulness_for_submission_score": {
+                "type": "integer",
+                "enum": [0, 1, 2, 3]
+            },
+            "user_comment_usefulness_for_submission_label": {
+                "type": "string",
+                "enum": [
+                    "not_assessable",
+                    "low",
+                    "moderate",
+                    "high"
+                ]
+            },
+            "curation_decision": {
+                "type": "string",
+                "enum": [
+                    "prefer_pipeline",
+                    "prefer_user_comment",
+                    "merge_or_review",
+                    "insufficient_reference"
+                ]
+            },
+            "review_priority": {
+                "type": "string",
+                "enum": [
+                    "low",
+                    "medium",
+                    "high"
+                ]
+            },
+            "key_matched_points": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "key_mismatched_points": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "why_pipeline_comment_would_be_better": {
+                "type": "string"
+            },
+            "overall_rationale": {
+                "type": "string"
+            }
+        },
+        "required": [
+            "assessment_possible",
+            "assessment_limitations",
+            "comment_information_density_score",
+            "comment_information_density_label",
+            "comment_is_title_like",
+            "comment_is_reference_quality",
+            "comment_reference_limit_reason",
+            "comment_scope_level",
+            "pipeline_scope_level",
+            "scope_mismatch",
+            "entity_match_level",
+            "mismatch_primary_cause",
+            "short_vs_headline_score",
+            "short_vs_headline_label",
+            "short_vs_headline_rationale",
+            "short_vs_content_score",
+            "short_vs_content_label",
+            "short_vs_content_rationale",
+            "extended_vs_content_score",
+            "extended_vs_content_label",
+            "extended_vs_content_rationale",
+            "pd_applicable",
+            "pd_vs_headline_score",
+            "pd_vs_headline_label",
+            "pd_vs_headline_rationale",
+            "pd_vs_content_score",
+            "pd_vs_content_label",
+            "pd_vs_content_rationale",
+            "has_contradiction",
+            "missing_core_comment_point",
+            "comment_too_vague_to_judge",
+            "pipeline_comment_more_informative",
+            "pipeline_comment_more_specific",
+            "pipeline_comment_more_actionable",
+            "would_prefer_pipeline_comment_as_annotation",
+            "pipeline_usefulness_for_submission_score",
+            "pipeline_usefulness_for_submission_label",
+            "user_comment_usefulness_for_submission_score",
+            "user_comment_usefulness_for_submission_label",
+            "curation_decision",
+            "review_priority",
+            "key_matched_points",
+            "key_mismatched_points",
+            "why_pipeline_comment_would_be_better",
+            "overall_rationale"
+        ]
+    }
+    },
 }
 
 
@@ -1099,338 +1506,271 @@ def _is_openai_responses_model(model: str) -> bool:
     prefixes = ("gpt-5", "o4", "gpt-4.1", "gpt-4o-")
     return any(model.startswith(p) for p in prefixes)
 
-def call_prompt(provider, model, user_prompts, system_prompt, prefill_text = "{"):
-    """
-    Calls the LLM API with a list of strings and a system prompt.
-    Args:
-        provider (str): one of "anthropic", "openai", "openrouter" (via OpenAI SDK)
-        model (str): the model for use with the API, e.g. "claude-sonnet-4-20250514"
-        user_prompts (list of str): A list of strings to be sent to the API. Each will be treated as a separate user message.
-        Currently designed so any prompt that needs to be cached is always the first message.
-        For processing multiple genes of the same paper it is recommended to cache the paper text.
-        system_prompt (str): The system prompt to be used.
+def _ensure_list(user_prompts: UserPrompts) -> List[str]:
+    if user_prompts is None:
+        return []
+    if isinstance(user_prompts, str):
+        return [user_prompts]
+    return list(user_prompts)
 
-    Returns:
-        str: The response from the LLM API.
-    """
+# ---------- OpenRouter structured outputs support detection ----------
+_STRUCTURED_OUTPUT_MODELS_CACHE: Optional[Set[str]] = None
 
-    messages = []
-    system_message = None
+def _openrouter_models_supporting_structured_outputs(api_key: str) -> Set[str]:
+    """
+    Uses OpenRouter models endpoint filter for supported parameters.
+    Official docs list 'supported_parameters' as a query parameter. :contentReference[oaicite:3]{index=3}
+    """
+    url = "https://openrouter.ai/api/v1/models"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    params = {"supported_parameters": "structured_outputs"}
+
+    resp = requests.get(url, headers=headers, params=params, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+
+    models = set()
+    for m in data.get("data", []) or []:
+        mid = m.get("id")
+        if isinstance(mid, str):
+            models.add(mid)
+    return models
+
+def openrouter_supports_structured_outputs(model: str) -> bool:
+    global _STRUCTURED_OUTPUT_MODELS_CACHE
+    if _STRUCTURED_OUTPUT_MODELS_CACHE is None:
+        api_key = os.getenv("OPENROUTER_API_KEY", "")
+        if not api_key:
+            return False
+        try:
+            _STRUCTURED_OUTPUT_MODELS_CACHE = _openrouter_models_supporting_structured_outputs(api_key)
+        except Exception:
+            _STRUCTURED_OUTPUT_MODELS_CACHE = set()
+    return model in _STRUCTURED_OUTPUT_MODELS_CACHE
+
+def response_format_for_schema(name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    OpenRouter structured outputs request shape.
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": name,
+            "strict": True,
+            "schema": schema,
+        },
+    }
+
+
+
+def print_cache_stats(label: str, provider: str, model: str, usage: dict, elapsed: float) -> None:
+    """
+    Convenience function to monitor cache is implemented correctly
+    :param label:
+    :param provider:
+    :param model:
+    :param usage:
+    :param elapsed:
+    :return:
+    """
+    if not usage:
+        print(f"[CACHE] {label} | {provider} | {model} | elapsed={elapsed:.2f}s | (no usage)")
+        return
+
+    if provider == "openrouter":
+        ptd = usage.get("prompt_tokens_details") or {}
+        cached = int(ptd.get("cached_tokens", 0) or 0)
+        wrote = int(ptd.get("cache_write_tokens", 0) or 0)
+        cost = usage.get("cost", None)
+        pt = int(usage.get("prompt_tokens", usage.get("input", 0)) or 0)
+        ct = int(usage.get("completion_tokens", usage.get("output", 0)) or 0)
+        extras = f" cost={cost}" if cost is not None else ""
+        print(f"[CACHE] {label} | {model} | pt={pt:,} ct={ct:,} cached={cached:,} write={wrote:,} elapsed={elapsed:.2f}s{extras}")
+        return
+
+    if provider == "anthropic":
+        read = int(usage.get("cache_read_input_tokens", 0) or 0)
+        create = int(usage.get("cache_creation_input_tokens", 0) or 0)
+        it = int(usage.get("input_tokens", usage.get("input", 0)) or 0)
+        ot = int(usage.get("output_tokens", usage.get("output", 0)) or 0)
+        print(f"[CACHE] {label} | {model} | in={it:,} out={ot:,} read={read:,} create={create:,} elapsed={elapsed:.2f}s")
+        return
+
+    print(f"[CACHE] {label} | {provider} | {model} | elapsed={elapsed:.2f}s | usage_keys={list(usage.keys())}")
+# UPDATED, may break the use cases in the single paper or testing cases
+def call_prompt(
+    provider: str,
+    model: str,
+    user_prompts: List[str],
+    system_prompt: Optional[str],
+    prefill_text: str = "{",
+    *,
+    cache: Optional[Dict[str, Any]] = None,
+    response_format: Optional[Dict[str, Any]] = None,
+    plugins: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[str, Dict[str, Any], float]:
+    """
+    Calls the LLM API.
+
+    Caching:
+      - Disabled by default.
+      - Enable with cache={"enabled": True, "ttl": "1h"} (ttl optional; default ~5m).
+      - For OpenRouter+Claude caching:
+          * First USER message should be the cached paper text (constant across genes),
+            with multipart blocks and cache_control on the paper text block.
+          * Gene-specific prompts should be subsequent USER messages.
+    """
+    cache = cache or {"enabled": False}
+    cache_enabled = bool(cache.get("enabled"))
+    ttl = cache.get("ttl")
+
+    prompts = _ensure_list(user_prompts)
+
     local_max_tokens = max_tokens
     if model == "claude-3-5-haiku-20241022":
         local_max_tokens = 8192
-    if system_prompt:
-        system_message = system_prompt  # Store system prompt separately for Claude
 
-    if len(user_prompts) > 1:
-        cache_prompt = user_prompts[0]
-        prompt = user_prompts[1]
-        if provider == "anthropic":
-            # Anthropic supports caching
-            messages.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": cache_prompt,
-                        "cache_control": {"type": "ephemeral"},
-                    },
-                    {"type": "text", "text": prompt},
-                ],
-            })
-        else:
-            # OpenRouter/OpenAI: concatenate
-            messages.append({"role": "user", "content": cache_prompt + "\n\n" + prompt})
-    else:
-        prompt = user_prompts[0]
-        messages.append({"role": "user", "content": prompt})
-
-
-    # Defaults to get key from environment variable
+    # ---------------- Anthropic ----------------
     if provider == "anthropic":
         client = Anthropic()
-        # Add prefill if specified (only for Claude)
-        if prefill_text:
+
+        messages: List[Dict[str, Any]] = []
+        if cache_enabled and len(prompts) > 1:
+            cache_control = {"type": "ephemeral"}
+            if ttl:
+                cache_control["ttl"] = ttl
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompts[0], "cache_control": cache_control},
+                        {"type": "text", "text": prompts[1]},
+                    ],
+                }
+            )
+            for p in prompts[2:]:
+                messages.append({"role": "user", "content": p})
+        else:
+            for p in prompts:
+                messages.append({"role": "user", "content": p})
+
+        # Prefill only if we're not enforcing schema
+        if prefill_text and response_format is None:
             messages.append({"role": "assistant", "content": prefill_text})
-        # Create the request parameters
-        request_params = {
+
+        request_params: Dict[str, Any] = {
             "model": model,
             "messages": messages,
             "max_tokens": local_max_tokens,
             "temperature": model_temp,
         }
+        if system_prompt:
+            request_params["system"] = system_prompt
 
-        # Add system prompt if it exists
-        if system_message:
-            request_params["system"] = system_message
-
-        start = time.perf_counter()  # time the call
+        start = time.perf_counter()
         response = client.messages.create(**request_params)
-        elapsed = time.perf_counter() - start  # end time
-
+        elapsed = time.perf_counter() - start
 
         result = response.content[0].text if response.content else ""
-        # If we used prefill, prepend it to the response
-        if prefill_text:
+        if prefill_text and response_format is None:
             result = prefill_text + result
 
         usage = _extract_usage("anthropic", response)
-        return result, usage, elapsed  # return usage and time too
 
+        return result, usage, elapsed
 
-
-
-    elif provider == "openrouter":
-
-        openai_messages = []
-
-        if system_prompt:
-            openai_messages.append({"role": "system", "content": system_prompt})
-
-        openai_messages.extend(messages)
-
-        # Create OpenAI client with OpenRouter configuration - simplified
-
+    # ---------------- OpenRouter (OpenAI SDK) ----------------
+    if provider == "openrouter":
         from openai import OpenAI as OpenAIClient
 
-        client = OpenAIClient(
-
-            base_url="https://openrouter.ai/api/v1",
-
-            api_key=OPENROUTER_API_KEY,
-
-            default_headers={
-
-                "HTTP-Referer": "https://github.com/yourusername",  # Optional but recommended
-
-                "X-Title": "Gene Curation Pipeline",  # Optional
-
-            }
-
-        )
-
-        start = time.perf_counter()
-
-        request_params = {
-
-            "model": model,
-
-            "messages": openai_messages,
-
-            "max_tokens": local_max_tokens,
-
-            "temperature": model_temp,
-
-            "timeout": HTTP_TIMEOUT,  # Add explicit timeout
-
-        }
-
-        # Try with reasoning first, fallback if not supported
-
-        try:
-
-            # First attempt: with reasoning/thinking enabled
-
-            response = client.chat.completions.create(
-
-                **request_params,
-
-                extra_body={
-
-                    "provider": {
-
-                        "allow_fallbacks": True,  # Allow OpenRouter to fallback if primary fails
-
-                    },
-
-                }
-
-            )
-
-        except Exception as e:
-
-            error_msg = str(e).lower()
-
-            # If reasoning not supported or other API error, retry without extras
-
-            if "reasoning" in error_msg or "extra_body" in error_msg or "provider" in error_msg:
-
-                print(f"  ⚠️  Retrying without extended params: {e}")
-
-                response = client.chat.completions.create(**request_params)
-
-            else:
-
-                raise
-
-        elapsed = time.perf_counter() - start
-
-        result = response.choices[0].message.content
-
-        # Extract usage from response
-
-        usage_obj = getattr(response, 'usage', None)
-
-        if usage_obj:
-
-            usage = {
-
-                "input": getattr(usage_obj, 'prompt_tokens', 0),
-
-                "output": getattr(usage_obj, 'completion_tokens', 0),
-
-                "total": getattr(usage_obj, 'total_tokens', 0)
-
-            }
-
-        else:
-
-            usage = {"input": 0, "output": 0, "total": 0}
-
-        return result, usage, elapsed
-
-    elif (provider == "openai"):
-
-        # Build chat-style messages first
-
-        openai_messages = []
-
+        openai_messages: List[Dict[str, Any]] = []
         if system_prompt:
             openai_messages.append({"role": "system", "content": system_prompt})
 
-        openai_messages.extend(messages)
+        if cache_enabled and len(prompts) > 1:
+            # Cache ONLY the first prompt (paper text) as a cache_control block.
+            cache_control = {"type": "ephemeral"}
+            if ttl:
+                cache_control["ttl"] = ttl
 
-        client = OpenAI()
+            openai_messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompts[0], "cache_control": cache_control},
+                    ],
+                }
+            )
+            for p in prompts[1:]:
+                openai_messages.append({"role": "user", "content": p})
+        else:
+            for p in prompts:
+                openai_messages.append({"role": "user", "content": p})
+
+        # ✅ Assistant prefill ONLY when NOT using response_format.
+        # If using response_format json_schema/json_object, do NOT prefill; let constrained decoding do the work.
+        used_prefill = bool(prefill_text) and response_format is None
+        if used_prefill:
+            openai_messages.append({"role": "assistant", "content": prefill_text})
+
+        client = OpenAIClient(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY,
+            default_headers={
+                "HTTP-Referer": "https://github.com/yourusername",
+                "X-Title": "Gene Curation Pipeline",
+            },
+        )
+
+
+        # ✅ Structured outputs (best fix for “formatter needed”)
+        # Only enforce structured outputs if model supports it
+        wants_structured = response_format is not None
+        can_structured = openrouter_supports_structured_outputs(model)
+        use_structured = wants_structured and can_structured
+
+        used_prefill = bool(prefill_text) and not use_structured
+        if used_prefill:
+            openai_messages.append({"role": "assistant", "content": prefill_text})
+
+        request_params: Dict[str, Any] = {
+            "model": model,
+            "messages": openai_messages,
+            "max_tokens": local_max_tokens,
+            "temperature": model_temp,
+            "timeout": HTTP_TIMEOUT,
+        }
+        if use_structured:
+            request_params["response_format"] = response_format
+
+        extra_body: Dict[str, Any] = {
+            "provider": {
+                "allow_fallbacks": True,
+                # Only require parameters when we actually use structured outputs
+                "require_parameters": True if use_structured else False,
+            }
+        }
+
+        # Optional: response-healing plugin reduces invalid JSON risk with response_format json_schema.
+        # Plugins are enabled by adding a "plugins" array to the request payload. :contentReference[oaicite:1]{index=1}
+        if plugins:
+            extra_body["plugins"] = plugins
 
         start = time.perf_counter()
+        response = client.chat.completions.create(**request_params, extra_body=extra_body)
+        elapsed = time.perf_counter() - start
 
-        if _is_openai_responses_model(model):
+        result = response.choices[0].message.content or ""
 
-            # Responses API
+        # If we used assistant prefill, the returned text is the completion AFTER the prefill.
+        # So we must reconstruct the full JSON string.
+        if used_prefill:
+            result = prefill_text + result
 
-            resp_input = _to_responses_input(openai_messages)
-
-            request_params = {
-
-                "model": model,
-
-                "input": resp_input,
-
-                "instructions": system_prompt or "",
-
-                "max_output_tokens": min(local_max_tokens, RESPONSES_MAX_OUTPUT_TOKENS),
-
-                "timeout_s": _get_http_timeout(),
-
-                # Correct placement for verbosity: under "text"
-
-                "text": {
-
-                    "format": {"type": "text"},
-
-                    **({"verbosity": VERBOSITY} if VERBOSITY else {}),
-
-                },
-
-            }
-
-            # Reasoning control stays top-level
-
-            if REASONING_EFFORT:
-                request_params["reasoning"] = {"effort": REASONING_EFFORT}
-
-            # Keep temperature only if supported
-
-            if _responses_supports_temperature(model) and (model_temp is not None):
-                request_params["temperature"] = model_temp
-
-            try:
-
-                response = _openai_responses_create(client, **request_params)
-
-            except RuntimeError as e:
-
-                msg = str(e)
-
-                # If API rejects verbosity, retry once without it
-
-                if "Unknown parameter" in msg and "verbosity" in msg:
-
-                    request_params.pop("text", None)  # drop verbosity + format block
-
-                    # Minimal safe text config without verbosity
-
-                    request_params["text"] = {"format": {"type": "text"}}
-
-                    response = _openai_responses_create(client, **request_params)
-
-                else:
-
-                    raise
-
-            elapsed = time.perf_counter() - start
-
-            result = getattr(response, "output_text", "") or ""
-
-            if not result:
-
-                parts = []
-
-                for item in getattr(response, "output", []) or []:
-
-                    for c in item.get("content", []) or []:
-
-                        t = c.get("text") if isinstance(c, dict) else getattr(c, "text", None)
-
-                        if t:
-                            parts.append(t)
-
-                result = "".join(parts)
-
-            usage = _extract_usage("openai-responses", response)
-
-
-        else:
-
-            # Chat Completions API
-
-            try:
-
-                response = client.chat.completions.create(
-
-                    model=model,
-
-                    messages=openai_messages,
-
-                    max_tokens=local_max_tokens,
-
-                    temperature=model_temp,
-
-                    timeout=_get_http_timeout(),
-
-                )
-
-            except TypeError:
-
-                response = client.chat.completions.create(
-
-                    model=model,
-
-                    messages=openai_messages,
-
-                    max_tokens=local_max_tokens,
-
-                    temperature=model_temp,
-
-                )
-
-            elapsed = time.perf_counter() - start
-
-            result = response.choices[0].message.content
-
-            usage = _extract_usage("openai-chat", response)
-
+        usage = _extract_usage("openrouter", response)
         return result, usage, elapsed
-    else:
-        raise ValueError("unsupported LLM provider, please use 'anthropic', 'openrouter', or 'openai'")
 
+
+    raise ValueError("unsupported LLM provider; use 'anthropic' or 'openrouter'")
+
+    print_cache_stats("call_prompt", provider, model, usage, elapsed)

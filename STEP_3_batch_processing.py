@@ -9,12 +9,19 @@ from pipeline.prompts import *
 from pipeline.pubmed_helpers import *
 from pipeline.vpdb_helpers import *
 from pipeline.utils import *
+from pipeline.prompts import (_ensure_list, )
 
 # Extract commonly used variables from global_prompts_and_schema
 SUMMARY_SYSTEM_PROMPT = global_prompts_and_schema["getGeneSummary"]["SystemPrompt"]
 VALIDATION_SCHEMA = global_prompts_and_schema["getGeneSummary"]["ValidationSchema"]
-
-def is_gene_already_processed(pubmed_id: str, gene_id: str, check_all_steps: bool = True) -> bool:
+USER_PROMPTS = global_prompts_and_schema["getGeneSummary"]["UserPrompts"]
+# NB can change default step checking behaviour in config
+def is_gene_already_processed(
+    pubmed_id: str,
+    gene_id: str,
+    check_all_steps: bool = True,
+    flex_model: bool = True,
+) -> bool:
     """
     Check if gene-paper pair has been fully processed.
 
@@ -23,50 +30,113 @@ def is_gene_already_processed(pubmed_id: str, gene_id: str, check_all_steps: boo
         gene_id: Gene ID
         check_all_steps: If True, checks summary + PDs + verify all complete
                         If False, only checks summary (backward compatible)
+        flex_model:
+            - True (default): each step may be completed by ANY model key (best resumability).
+            - False: all required steps must be completed under the SAME single model key
+                     (strict mode; useful if you expect a single model to do all steps).
 
     Returns:
         True if processing is complete
     """
     filename = OUT_DIR / f"{pubmed_id}.json"
-
     if not filename.exists():
         return False
 
+    def _success_models(step_node: dict) -> set[str]:
+        models = set()
+        for k, v in (step_node or {}).items():
+            if not isinstance(v, dict):
+                continue
+            if v.get("success") and v.get("data"):
+                models.add(k)
+        return models
+
     try:
-        with open(filename, 'r') as f:
+        with open(filename, "r") as f:
             paper_data = json.load(f)
 
+        # Old behavior - just check summary
         if not check_all_steps:
-            # Old behavior - just check summary
-            if gene_id in paper_data.get("getGeneSummary", {}):
-                gene_data = paper_data["getGeneSummary"][gene_id]
-                if SUMMARY_MODEL in gene_data:
-                    model_result = gene_data[SUMMARY_MODEL]
-                    # Consider it processed if success=True and data is not None
-                    if model_result.get("success") and model_result.get("data") is not None:
-                        return True
-            return False
+            step_node = paper_data.get("getGeneSummary", {}).get(gene_id, {})
+            if not isinstance(step_node, dict):
+                return False
+
+            if flex_model:
+                return len(_success_models(step_node)) > 0
+
+            model_result = step_node.get(SUMMARY_MODEL, {})
+            return bool(model_result.get("success") and model_result.get("data"))
 
         # New behavior - check all three steps
-        required_steps = [
-            ("getGeneSummary", SUMMARY_MODEL),
-            ("generatePDs", PD_GENERATOR_MODEL),
-            ("verifyPDs", PD_VERIFIER_MODEL)
-        ]
+        required_steps = ["getGeneSummary", "generatePDs", "verifyPDs"]
 
-        for step_key, model in required_steps:
-            step_data = paper_data.get(step_key, {}).get(gene_id, {})
-            model_data = step_data.get(model, {})
+        # Flexible: each step can be satisfied by any successful model key
+        if flex_model:
+            for step_key in required_steps:
+                step_node = paper_data.get(step_key, {}).get(gene_id, {})
+                if not isinstance(step_node, dict):
+                    return False
+                if len(_success_models(step_node)) == 0:
+                    return False
+            return True  # All steps complete (by any models)
 
-            if not (model_data.get("success") and model_data.get("data")):
-                return False  # This step not complete
-
-        return True  # All steps complete!
+        # Strict: all steps must share the same successful model key
+        shared: set[str] | None = None
+        for step_key in required_steps:
+            step_node = paper_data.get(step_key, {}).get(gene_id, {})
+            if not isinstance(step_node, dict):
+                return False
+            step_models = _success_models(step_node)
+            if not step_models:
+                return False
+            shared = step_models if shared is None else (shared & step_models)
+            if not shared:
+                return False
+        return True  # All steps complete under at least one shared model key
 
     except Exception:
         return False
 
+POSSIBLE_SUMMARY_MODEL_KEYS = [
+    SUMMARY_MODEL,
+    EXISTING_SUMMARY_MODEL,
+    "anthropic/claude-sonnet-4-5",
+    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-4-20250514",
+]
+def load_existing_summary(pubmed_id: str, gene_id: str):
+    filename = OUT_DIR / f"{pubmed_id}.json"
+    if not filename.exists():
+        return None
 
+    try:
+        with open(filename, "r") as f:
+            data = json.load(f)
+
+        # NEW: check modern nested format first
+        node = data.get("getGeneSummary", {}).get(gene_id, {})
+        for model_key in POSSIBLE_SUMMARY_MODEL_KEYS:
+            model_blob = node.get(model_key)
+            if not isinstance(model_blob, dict):
+                continue
+            if model_blob.get("success") is True and isinstance(model_blob.get("data"), dict) and "error" not in model_blob["data"]:
+                return model_blob["data"]
+
+            # Formatter-only repair path if raw_response exists
+            raw = (model_blob.get("data") or {}).get("raw_response")
+            if model_blob.get("success") is False and isinstance(raw, str) and raw.strip():
+                repaired = format_with_retry(raw, VALIDATION_SCHEMA)
+                if isinstance(repaired, dict):
+                    save_result(pubmed_id, gene_id, repaired, True, "getGeneSummary", model=model_key)
+                    return repaired
+
+        # fallback: old formats you already had
+        if gene_id in data and isinstance(data[gene_id], dict):
+            return data[gene_id]
+
+        return None
+    except Exception:
+        return None
 def save_result(pubmed_id: str, gene_id: str, data: dict, success: bool,
                 step_key: str = "getGeneSummary", usage: dict = None,
                 seconds: float = None, model: str = None):
@@ -127,55 +197,67 @@ def save_result(pubmed_id: str, gene_id: str, data: dict, success: bool,
     with open(filename, 'w') as f:
         json.dump(paper_data, f, indent=2)
 
-
 def format_with_retry(content: str, schema: dict, max_attempts: int = MAX_RETRY) -> Optional[dict]:
     """Parse JSON with retry using formatter model."""
-    # Try direct parsing first, after stripping markdown
-    try:
-        # Strip markdown code fences if present
-        cleaned = content.strip()
-        if cleaned.startswith("```"):
-            # Remove ```json or ``` at start and ``` at end
-            cleaned = re.sub(r'^```(?:json)?\s*\n', '', cleaned)
-            cleaned = re.sub(r'\n```\s*$', '', cleaned)
-        return json.loads(cleaned)
-    except json.JSONDecodeError as e:
-        print(f"  Warning: JSON parse failed: {e}")
-        print(f"  First 200 chars: {content[:200]}")
 
-    # Try with formatter model
+    # 1. Try direct parsing first using your utility
+    data = extract_json(content)
+    if isinstance(data, dict):
+        return data
+
+    print("  ! Direct parsing failed, attempting formatter model...")
+
+    # 2. Try with formatter model
     for attempt in range(max_attempts):
         try:
             print(f"  Retry {attempt + 1}/{max_attempts} with formatter model...")
-            response = anthropic_client.messages.create(
-                model=FORMATTER_MODEL,
-                max_tokens=4000,
-                temperature=0,
-                messages=[{
-                    "role": "user",
-                    "content": f"Convert this to valid JSON matching the schema. Output ONLY valid JSON, no markdown:\n\n{content}\n\nSchema:\n{json.dumps(schema)}"
-                }]
-            )
-            result_text = response.content[0].text.strip()
-            # Strip markdown again
-            if result_text.startswith("```"):
-                result_text = re.sub(r'^```(?:json)?\s*\n', '', result_text)
-                result_text = re.sub(r'\n```\s*$', '', result_text)
-            return json.loads(result_text)
+
+            if PROVIDER == "anthropic":
+                response = anthropic_client.messages.create(
+                    model=FORMATTER_MODEL,
+                    max_tokens=4000,
+                    temperature=0,
+                    messages=[{
+                        "role": "user",
+                        "content": f"Convert this to valid JSON matching the schema. Output ONLY valid JSON:\n\n{content}\n\nSchema:\n{json.dumps(schema)}"
+                    }]
+                )
+                result_text = response.content[0].text.strip()
+
+            elif PROVIDER == "openrouter":
+
+                result_text, _, _ = call_prompt(
+                    provider=PROVIDER,
+                    model=FORMATTER_MODEL,
+                    system_prompt="You are a JSON formatter. Output ONLY valid JSON.",
+                    user_prompts=[f"Fix this JSON according to schema:\n{content}\n\nSchema:\n{json.dumps(schema)}"],
+                    # We don't prefill "{" here because extract_json handles the fences/text for us
+                    prefill_text=""
+                )
+            else:
+                raise ValueError(f"Unsupported PROVIDER '{PROVIDER}'")
+
+            # 3. FIX: Use extract_json again instead of manual re.sub/json.loads
+            # This handles cases where the model still includes ```json blocks
+            final_data = extract_json(result_text)
+
+            if isinstance(final_data, dict):
+                return final_data
+
+            raise ValueError("Formatter model returned non-dictionary content")
+
         except Exception as e:
             print(f"  Retry {attempt + 1} failed: {e}")
             if attempt == max_attempts - 1:
-                print(f"  ERROR: All retries failed. Saving raw response for debugging.")
-                # Save raw response for debugging
-                debug_file = OUT_DIR / "debug_failed_parse.txt"
+                # Debug logging remains the same
+                debug_file = OUT_DIR / f"debug_failed_parse_{int(time.time())}.txt"
                 with open(debug_file, 'w') as f:
-                    f.write(f"Original content:\n{content}\n\n")
-                    f.write(f"Schema:\n{json.dumps(schema, indent=2)}\n")
+                    f.write(f"Original content:\n{content}\n\nSchema:\n{json.dumps(schema, indent=2)}")
                 print(f"  Raw response saved to: {debug_file}")
                 return None
             time.sleep(1)
-    return None
 
+    return None
 
 def generatePDs(summary_json: Dict[Any, Any], gene_text: str, n_pds: int = N_PDs) -> Tuple[Optional[dict], dict, Optional[float]]:
     """
@@ -221,24 +303,47 @@ def generatePDs(summary_json: Dict[Any, Any], gene_text: str, n_pds: int = N_PDs
     start = time.time()
 
     try:
-        response = anthropic_client.messages.create(
-            model=PD_GENERATOR_MODEL,
-            max_tokens=MAX_TOKENS,
-            temperature=MODEL_TEMP,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}]
-        )
+        if PROVIDER == "anthropic":
+            response = anthropic_client.messages.create(
+                model=PD_GENERATOR_MODEL,
+                max_tokens=MAX_TOKENS,
+                temperature=MODEL_TEMP,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            )
+            elapsed = time.time() - start
+            usage = {
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+            }
+            raw = response.content[0].text
+        elif PROVIDER == "openrouter":
+            # OpenRouter: structured outputs + response-healing (massively reduces formatter use)
+            rf = response_format_for_schema("generatePDs", schema)
+            plugins = [{"id": "response-healing"}]
 
-        elapsed = time.time() - start
+            raw, usage, elapsed = call_prompt(
+                provider=PROVIDER,
+                model=PD_GENERATOR_MODEL,
+                system_prompt=system_prompt,
+                user_prompts=user_prompt,
+                prefill_text="{",
+                cache={"enabled": False}, # we do not use paper text for this step so no caching
+                response_format=rf, # call_prompt suto-disables this if model doen't support structured outputs
+                plugins=plugins,
+            )
 
-        # Track usage
-        usage = {
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-        }
+            # OpenRouter/Claude often returns ONLY the completion after the prefill.
+            # raw = raw.strip()
+            # if not raw.startswith("{"):
+            #     print("  ! Prepending missing prefill brace to response")
+            #     raw = "{" + raw
+        else:
+            raise ValueError(f"Unsupported PROVIDER '{PROVIDER}' in generatePDs. Use 'anthropic' or 'openrouter'.")
+
 
         # Parse with retry
-        result = format_with_retry(response.content[0].text, schema)
+        result = format_with_retry(raw, schema)
 
         if not result:
             print("  ERROR: generatePDs parsing failed after retries")
@@ -258,7 +363,10 @@ def verifyPDs(suggested_pds: Dict[Any, Any], paper_text: str, gene_text: str,
     Verify and select product descriptions against paper evidence.
 
     IMPORTANT: This function can reuse cached paper text from summary generation!
-    When use_caching=True, the paper text will be cached for efficient reuse.
+    When use_caching=True, the first user prompt (paper text)
+    is sent as a multipart content block with cache_control so subsequent calls for the same
+    paper can hit the cache. OpenRouter sticky routing keys off the first system message and
+    first non-system message, so keep the opening messages consistent.
 
     Args:
         suggested_pds: Output from generatePDs
@@ -300,61 +408,78 @@ def verifyPDs(suggested_pds: Dict[Any, Any], paper_text: str, gene_text: str,
     }
 
     system_prompt = get_prompt_and_replace("verifyPDs", replacements, "SystemPrompt")
-    user_prompt = get_prompt_and_replace("verifyPDs", replacements, "UserPrompts")
+    user_prompts = get_prompt_and_replace("verifyPDs", replacements, "UserPrompts")
 
+    if isinstance(user_prompts, str):
+        user_prompts = [user_prompts]
     # Call API with optional caching
     start = time.time()
 
+    rf = response_format_for_schema("verifyPDs", schema) if PROVIDER == "openrouter" else None
+    plugins = [{"id": "response-healing"}] if PROVIDER == "openrouter" else None
+    cache_cfg = {"enabled": True, "ttl": "1h"} if (PROVIDER == "openrouter" and use_caching) else {"enabled": False}
+
     try:
-        if use_caching:
-            # Use caching structure - paper text will be cached
-            # This reuses the cache from summary generation if within cache TTL!
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Do not respond. Here is the paper text:"},
-                        {"type": "text", "text": paper_text, "cache_control": {"type": "ephemeral"}}
-                    ]
-                },
-                {"role": "assistant", "content": "I have received the paper text."},
-                {"role": "user", "content": user_prompt}
-            ]
+        if PROVIDER == "anthropic":
+            if use_caching:
+                # Optimized for Anthropic Native Caching
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                           {"type": "text", "text": user_prompts[0], "cache_control": {"type": "ephemeral"}}
+                        ]
+                    },
+                    {"role": "assistant", "content": "I have received the paper text."},
+                    {"role": "user", "content": user_prompts[1]}
+                ]
+                response = anthropic_client.messages.create(
+                    model=PD_VERIFIER_MODEL,
+                    max_tokens=MAX_TOKENS,
+                    temperature=MODEL_TEMP,
+                    system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+                    messages=messages
+                )
+                usage = {
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                    "cache_creation_input_tokens": getattr(response.usage, 'cache_creation_input_tokens', 0),
+                    "cache_read_input_tokens": getattr(response.usage, 'cache_read_input_tokens', 0),
+                }
+            else:
+                # Standard Anthropic call
+                response = anthropic_client.messages.create(
+                    model=PD_VERIFIER_MODEL,
+                    max_tokens=MAX_TOKENS,
+                    temperature=MODEL_TEMP,
+                    system=system_prompt,
+                    messages= [{"role": "user", "content": p} for p in user_prompts]
+                )
+                usage = {
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                }
+            elapsed = time.time() - start
+            raw = response.content[0].text
 
-            response = anthropic_client.messages.create(
+        elif PROVIDER == "openrouter":
+
+           raw, usage, elapsed = call_prompt(
+                provider=PROVIDER,
                 model=PD_VERIFIER_MODEL,
-                max_tokens=MAX_TOKENS,
-                temperature=MODEL_TEMP,
-                system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-                messages=messages
+                system_prompt=system_prompt,
+                user_prompts=user_prompts,  # Pass as single list item
+                prefill_text="{",
+                cache=cache_cfg,
+                response_format=rf,
+                plugins=plugins,
             )
 
-            # Track cache usage
-            usage = {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-                "cache_creation_input_tokens": getattr(response.usage, 'cache_creation_input_tokens', 0),
-                "cache_read_input_tokens": getattr(response.usage, 'cache_read_input_tokens', 0),
-            }
         else:
-            # No caching - simple call
-            response = anthropic_client.messages.create(
-                model=PD_VERIFIER_MODEL,
-                max_tokens=MAX_TOKENS,
-                temperature=MODEL_TEMP,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}]
-            )
+            raise ValueError(f"Unsupported PROVIDER '{PROVIDER}' in verifyPDs.")
 
-            usage = {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-            }
-
-        elapsed = time.time() - start
-
-        # Parse with retry
-        result = format_with_retry(response.content[0].text, schema)
+        # Parse with retry (Now uses the updated format_with_retry we fixed in Step 2)
+        result = format_with_retry(raw, schema)
 
         if not result:
             print("  ERROR: verifyPDs parsing failed after retries")
@@ -363,54 +488,79 @@ def verifyPDs(suggested_pds: Dict[Any, Any], paper_text: str, gene_text: str,
         return result, usage, elapsed
 
     except Exception as e:
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start  # Use perf_counter for accuracy
         print(f"  ERROR: verifyPDs API call failed: {e}")
         return None, {}, elapsed
 
+#
+def _step_schema(step_key: str) -> Dict[str, Any]:
+    return global_prompts_and_schema[step_key]["ValidationSchema"]
 
 
+def _step_system(step_key: str, replacements: Dict[str, Any]) -> str:
+    return get_prompt_and_replace(step_key, replacements, "SystemPrompt")
+
+
+def _step_user(step_key: str, replacements: Dict[str, Any]) -> List[str]:
+    return _ensure_list(get_prompt_and_replace(step_key, replacements, "UserPrompts"))
+
+
+def _format_openrouter_cache_info(usage: Dict[str, Any]) -> str:
+    ptd = usage.get("prompt_tokens_details") or {}
+    cached = int(ptd.get("cached_tokens", 0) or 0)
+    wrote = int(ptd.get("cache_write_tokens", 0) or 0)
+    cost = usage.get("cost", None)
+    bits = [f"cached={cached:,}", f"write={wrote:,}"]
+    if cost is not None:
+        bits.append(f"cost={cost}")
+    return " ".join(bits)
+
+# pubmed_id = "12057017"
+# gene_list = [('PF3D7_1414400', 'plasmodb')]
 def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                                save: bool = True) -> List[dict]:
-    """Process multiple genes from same paper with prompt caching."""
+    """Process multiple genes from same paper with prompt caching for the paper text."""
     print(f"\n{'=' * 80}")
     print(f"Paper {pubmed_id}: {len(gene_list)} genes (USING CACHING)")
     print(f"{'=' * 80}")
 
-    # Try to fetch paper - check if available
-    paper_available = False
-    paper_text = None
     try:
+        print("Fetching paper text...")
         paper_text = get_paper_text(pubmed_id)
-        paper_available = True
     except Exception as e:
         print(f"  ✗ Paper not available in PMC: {e}")
-        # Return all genes as failed with paper_available=False
-        results = []
-        for gene_id, host_db in gene_list:
-            results.append({
+        return [
+            {
                 "pubmed_id": pubmed_id,
                 "gene_id": gene_id,
                 "success": False,
                 "error": "Paper not available in PMC",
                 "paper_available": False,
                 "alias_in_text": False,
-                "mentions": 0
-            })
-        return results
+                "mentions": 0,
+            }
+            for gene_id, _host_db in gene_list
+        ]
 
-    system_prompt = SUMMARY_SYSTEM_PROMPT.replace("[JSON_SCHEMA]", json.dumps(VALIDATION_SCHEMA))
-    system_prompt = system_prompt.replace("[N_QUOTES]", str(N_QUOTES))
+        # Use per-step schema from global_prompts_and_schema (single source of truth)
+        step_key = "getGeneSummary"
+        summary_schema = global_prompts_and_schema[step_key]["ValidationSchema"]
+
+        # System prompt is constant across genes for this paper
+        system_prompt = get_prompt_and_replace(
+            stage_key=step_key,
+            replacements={"N_QUOTES": N_QUOTES, "JSON_SCHEMA": summary_schema},
+            prompt_type="SystemPrompt",
+        )
 
     results = []
 
     for i, (gene_id, host_db) in enumerate(gene_list, 1):
         print(f"  [{i}/{len(gene_list)}] {gene_id}...", end=" ")
 
-        # Check if gene/aliases are in paper text
         alias_in_text, mentions = check_gene_in_text(gene_id, paper_text, host_db)
-
         if not alias_in_text:
-            print(f"✗ Gene/aliases not found in text (skipped)")
+            print("✗ Gene/aliases not found in text (skipped)")
             results.append({
                 "pubmed_id": pubmed_id,
                 "gene_id": gene_id,
@@ -418,15 +568,14 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                 "error": "Gene/aliases not found in paper text",
                 "paper_available": True,
                 "alias_in_text": False,
-                "mentions": 0
+                "mentions": 0,
             })
             continue
 
         print(f"({mentions} mentions) ", end="")
 
-        # Check if already processed
         if not OVERWRITE_EXISTING and is_gene_already_processed(pubmed_id, gene_id):
-            print(f"✓ Already processed (skipped)")
+            print("✓ Already processed (skipped)")
             results.append({
                 "pubmed_id": pubmed_id,
                 "gene_id": gene_id,
@@ -434,78 +583,120 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                 "skipped": True,
                 "paper_available": True,
                 "alias_in_text": True,
-                "mentions": mentions
+                "mentions": mentions,
             })
             continue
 
-        start = time.time()
+        existing_summary = None if OVERWRITE_EXISTING else load_existing_summary(pubmed_id, gene_id)
+
 
         try:
             aliases = get_gene_synonyms(gene_id, paper_text, host_db)
             gene_display = f"{gene_id}, also known as {', '.join(aliases)}" if aliases else gene_id
 
-            # Messages with caching
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Do not respond. Here is the paper text:"},
-                        {"type": "text", "text": paper_text, "cache_control": {"type": "ephemeral"}}
+            raw = None
+            usage = {}
+            elapsed = 0.0
+
+            if existing_summary is not None:
+                result = existing_summary
+                print("✓ Summary loaded from cache", end=" | ")
+            else:
+                # Build user prompts from global schema templates
+                # (Prompt 0 contains PAPER_TEXT and should be cached; prompt 1 is gene-specific)
+                step_key = "getGeneSummary"
+                user_prompts = get_prompt_and_replace(
+                    stage_key=step_key,
+                    replacements={"PAPER_TEXT": paper_text, "GENE": gene_display},
+                    prompt_type="UserPrompts",
+                )
+                JSON_SCHEMA = global_prompts_and_schema.get(step_key).get("ValidationSchema")
+                system_prompt = get_prompt_and_replace(
+                    stage_key=step_key,
+                    replacements={"N_QUOTES": N_QUOTES, "JSON_SCHEMA": JSON_SCHEMA},
+                    prompt_type="SystemPrompt",
+                )
+
+                if PROVIDER == "anthropic":
+                    start = time.time()
+                    messages = [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": user_prompts[0], "cache_control": {"type": "ephemeral"}},
+                            ],
+                        },
+                        {"role": "assistant", "content": "I have received the paper text."},
+                        {"role": "user", "content": user_prompts[1]},
                     ]
-                },
-                {"role": "assistant", "content": "I have received the paper text."},
-                {"role": "user", "content": f"Generate summary for {gene_display}."}
-            ]
+                    response = anthropic_client.messages.create(
+                        model=SUMMARY_MODEL,
+                        max_tokens=MAX_TOKENS,
+                        temperature=MODEL_TEMP,
+                        system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+                        messages=messages,
+                    )
+                    usage = {
+                        "input_tokens": response.usage.input_tokens,
+                        "output_tokens": response.usage.output_tokens,
+                        "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0),
+                        "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0),
+                    }
+                    elapsed = time.time() - start
+                    raw = response.content[0].text
 
-            response = anthropic_client.messages.create(
-                model=SUMMARY_MODEL,
-                max_tokens=MAX_TOKENS,
-                temperature=MODEL_TEMP,
-                system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-                messages=messages
-            )
+                elif PROVIDER == "openrouter":
+                    cache_cfg = {"enabled": True, "ttl": "1h"}  # upped to 1h as caching wasnt working as intended at default 5 m
+                    rf = response_format_for_schema("getGeneSummary", VALIDATION_SCHEMA)
+                    plugins = [{"id": "response-healing"}]
 
-            # Track usage first (needed even if parsing fails)
-            usage = {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-                "cache_creation_input_tokens": getattr(response.usage, 'cache_creation_input_tokens', 0),
-                "cache_read_input_tokens": getattr(response.usage, 'cache_read_input_tokens', 0),
-            }
+                    raw, usage, elapsed = call_prompt(
+                        provider=PROVIDER,
+                        model=SUMMARY_MODEL,
+                        system_prompt=system_prompt,
+                        user_prompts=user_prompts,
+                        prefill_text="{",  # ignored when response_format is set
+                        cache=cache_cfg,  # caching ON explicitly
+                        response_format=rf,  # strict JSON schema
+                        plugins=plugins,
+                    )
 
-            result = format_with_retry(response.content[0].text, VALIDATION_SCHEMA)
+                else:
+                    raise ValueError(
+                        f"Unsupported PROVIDER '{PROVIDER}' in process_paper_with_caching. "
+                        f"Use 'anthropic' or 'openrouter'."
+                    )
 
-            elapsed = time.time() - start
+                result = format_with_retry(raw, VALIDATION_SCHEMA)
 
-            if not result:
-                # Save raw response for debugging
-                print(f"  ✗ Failed to parse response - saving raw output for debugging")
-                debug_data = {
-                    "error": "JSON parsing failed after retries",
-                    "raw_response": response.content[0].text[:1000],  # First 1000 chars
-                    "model": SUMMARY_MODEL
-                }
+                if not result:
+                    print("✗ Failed to parse response - saving raw output for debugging")
+                    debug_data = {
+                        "error": "JSON parsing failed after retries",
+                        "raw_response": (raw or "")[:1000],
+                        "model": SUMMARY_MODEL,
+                    }
+                    if save:
+                        save_result(pubmed_id, gene_id, debug_data, False, "getGeneSummary", usage, elapsed)
+                    results.append({
+                        "pubmed_id": pubmed_id,
+                        "gene_id": gene_id,
+                        "success": False,
+                        "error": "JSON parsing failed",
+                        "paper_available": True,
+                        "alias_in_text": True,
+                        "mentions": mentions,
+                    })
+                    continue
+
                 if save:
-                    save_result(pubmed_id, gene_id, debug_data, False, "getGeneSummary", usage, elapsed)
-                results.append({
-                    "pubmed_id": pubmed_id,
-                    "gene_id": gene_id,
-                    "success": False,
-                    "error": "JSON parsing failed",
-                    "paper_available": True,
-                    "alias_in_text": True,
-                    "mentions": mentions
-                })
-                continue
+                    save_result(pubmed_id, gene_id, result, True, "getGeneSummary", usage, elapsed)
 
-            if save:
-                save_result(pubmed_id, gene_id, result, True, "getGeneSummary", usage, elapsed)
+                print(f"✓ Summary ({elapsed:.1f}s)", end=" | ")
 
-            print(f"✓ Summary ({elapsed:.1f}s)", end=" | ")
-
-            # Check if gene is only mentioned in passing
+            # ✅ IMPORTANT: this must run for BOTH cached and newly-generated summaries
             if check_if_in_passing(result):
-                print(f"⚠️ Mentioned in passing only - skipping PD generation")
+                print("⚠️ Mentioned in passing only - skipping PD generation")
                 results.append({
                     "pubmed_id": pubmed_id,
                     "gene_id": gene_id,
@@ -516,24 +707,21 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                     "in_passing": True,
                     "paper_available": True,
                     "alias_in_text": True,
-                    "mentions": mentions
+                    "mentions": mentions,
                 })
-                continue  # Skip to next gene
+                continue
 
-            # ═══════════════════════════════════════════════════════════════
             # STEP 2: Generate PDs
-            # ═══════════════════════════════════════════════════════════════
             pd_result, pd_usage, pd_time = generatePDs(
                 summary_json=result,
                 gene_text=gene_display,
-                n_pds=N_PDs
+                n_pds=N_PDs,
             )
 
             if not pd_result:
-                print(f"✗ PD gen failed")
+                print("✗ PD gen failed")
                 if save:
-                    save_result(pubmed_id, gene_id,
-                               {"error": "PD generation failed"},
+                    save_result(pubmed_id, gene_id, {"error": "PD generation failed"},
                                False, "generatePDs", pd_usage, pd_time)
                 results.append({
                     "pubmed_id": pubmed_id,
@@ -542,32 +730,29 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                     "error": "PD generation failed",
                     "paper_available": True,
                     "alias_in_text": True,
-                    "mentions": mentions
+                    "mentions": mentions,
                 })
-                continue  # Skip verify if PD gen failed
+                continue
 
-            # Save PDs
             if save:
-                save_result(pubmed_id, gene_id, pd_result, True,
-                           "generatePDs", pd_usage, pd_time)
+                save_result(pubmed_id, gene_id, pd_result, True, "generatePDs", pd_usage, pd_time)
 
             print(f"✓ PDs ({pd_time:.1f}s)", end=" | ")
+            print(f"Usage: {_format_openrouter_cache_info(pd_usage)}")
 
-            # ═══════════════════════════════════════════════════════════════
             # STEP 3: Verify PDs
-            # ═══════════════════════════════════════════════════════════════
+            print("verifying...", end=" ", flush=True)
             verify_result, verify_usage, verify_time = verifyPDs(
                 suggested_pds=pd_result,
-                paper_text=paper_text,  # Reuses cached paper!
+                paper_text=paper_text,
                 gene_text=gene_display,
-                use_caching=True  # CRITICAL for cache reuse!
+                use_caching=True,
             )
 
             if not verify_result:
-                print(f"✗ Verify failed")
+                print("✗ Verify failed")
                 if save:
-                    save_result(pubmed_id, gene_id,
-                               {"error": "PD verification failed"},
+                    save_result(pubmed_id, gene_id, {"error": "PD verification failed"},
                                False, "verifyPDs", verify_usage, verify_time)
                 results.append({
                     "pubmed_id": pubmed_id,
@@ -576,18 +761,24 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                     "error": "PD verification failed",
                     "paper_available": True,
                     "alias_in_text": True,
-                    "mentions": mentions
+                    "mentions": mentions,
                 })
                 continue
 
-            # Save verified PDs
             if save:
-                save_result(pubmed_id, gene_id, verify_result, True,
-                           "verifyPDs", verify_usage, verify_time)
+                save_result(pubmed_id, gene_id, verify_result, True, "verifyPDs", verify_usage, verify_time)
 
             total_time = elapsed + pd_time + verify_time
-            cache_info = f"cache={verify_usage['cache_read_input_tokens']:,}" if i > 1 else f"created={verify_usage.get('cache_creation_input_tokens', 0):,}"
-            print(f"✓ Verified ({verify_time:.1f}s) | Total: {total_time:.1f}s ({cache_info})")
+            if PROVIDER == "anthropic":
+                cache_info = (
+                    f"cache={verify_usage.get('cache_read_input_tokens', 0):,}"
+                    if i > 1 else f"created={verify_usage.get('cache_creation_input_tokens', 0):,}"
+                )
+                print(f"✓ Verified ({verify_time:.1f}s) | Total: {total_time:.1f}s ({cache_info})")
+            else:
+                print(f"✓ Verified ({verify_time:.1f}s) | Total: {total_time:.1f}s")
+                if verify_usage:
+                    print(f"Usage: {_format_openrouter_cache_info(verify_usage)}")
 
             results.append({
                 "pubmed_id": pubmed_id,
@@ -601,7 +792,7 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                 "total_time": total_time,
                 "paper_available": True,
                 "alias_in_text": True,
-                "mentions": mentions
+                "mentions": mentions,
             })
 
         except Exception as e:
@@ -613,17 +804,42 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                 "error": str(e),
                 "paper_available": True,
                 "alias_in_text": True,
-                "mentions": mentions
+                "mentions": mentions,
             })
 
     return results
 
+def has_successful_step(
+    data: Dict[str, Any],
+    step_key: str,
+    gene_id: str,
+    *,
+    model: Optional[str] = None,
+    any_model: bool = False,
+) -> bool:
+    """Return True if a saved status file indicates the step is complete."""
+    step_node = (data.get(step_key) or {}).get(gene_id)
+    if not isinstance(step_node, dict):
+        return False
+
+    if any_model:
+        for v in step_node.values():
+            if isinstance(v, dict) and v.get("success") and v.get("data"):
+                return True
+        return False
+
+    if model is None:
+        return False
+
+    model_node = step_node.get(model)
+    return isinstance(model_node, dict) and bool(model_node.get("success")) and bool(model_node.get("data"))
 
 def process_batch_fallback(pairs: List[Tuple[str, str, str]], save: bool = True) -> List[dict]:
     """Fallback to standard processing when batch API is unavailable."""
     print(f"Processing {len(pairs)} pairs with standard API (sequential)...")
 
     results = []
+    
     for i, (pubmed_id, gene_id, host_db) in enumerate(pairs, 1):
         print(f"  [{i}/{len(pairs)}] {pubmed_id}_{gene_id}...", end=" ")
 
@@ -682,110 +898,213 @@ def process_batch_fallback(pairs: List[Tuple[str, str, str]], save: bool = True)
             aliases = get_gene_synonyms(gene_id, paper_text, host_db)
             gene_display = f"{gene_id}, also known as {', '.join(aliases)}" if aliases else gene_id
 
-            # Prepare prompts
-            system_prompt = SUMMARY_SYSTEM_PROMPT.replace("[JSON_SCHEMA]", json.dumps(VALIDATION_SCHEMA))
-            system_prompt = system_prompt.replace("[N_QUOTES]", str(N_QUOTES))
+            existing_summary = None if OVERWRITE_EXISTING else load_existing_summary(pubmed_id, gene_id)
 
-            # Call API
-            response = anthropic_client.messages.create(
-                model=SUMMARY_MODEL,
-                max_tokens=MAX_TOKENS,
-                temperature=MODEL_TEMP,
-                system=system_prompt,
-                messages=[
-                    {"role": "user", "content": f"Do not respond. Here is the paper text:\n\n{paper_text}"},
-                    {"role": "assistant", "content": "I have received the paper text."},
-                    {"role": "user", "content": f"Generate summary for {gene_display}."}
-                ]
-            )
-
-            # Track usage
-            usage = {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-            }
-
-            # Parse result
-            result = format_with_retry(response.content[0].text, VALIDATION_SCHEMA)
-            elapsed = time.time() - start
-
-            if not result:
-                print(f"✗ Parse failed ({elapsed:.1f}s)")
-                error_data = {"error": "JSON parsing failed", "raw_response": response.content[0].text[:1000]}
-                if save:
-                    save_result(pubmed_id, gene_id, error_data, False, "getGeneSummary", usage, elapsed)
-                results.append({
-                    "pubmed_id": pubmed_id,
-                    "gene_id": gene_id,
-                    "success": False,
-                    "error": "JSON parsing failed",
-                    "paper_available": True,
-                    "alias_in_text": True,
-                    "mentions": mentions
-                })
+            if existing_summary is not None:
+                result = existing_summary
+                usage = {}
+                elapsed = 0.0
+                print(f"✓ Summary loaded from cache", end=" | ")
             else:
-                # Summary success
-                if save:
-                    save_result(pubmed_id, gene_id, result, True, "getGeneSummary", usage, elapsed)
+                step_key = "getGeneSummary"
+                schema = global_prompts_and_schema[step_key]["ValidationSchema"]
 
-                print(f"✓ Summary ({elapsed:.1f}s)", end=" | ")
-                # Check if gene is only mentioned in passing
-                if check_if_in_passing(result):
-                    print(f"⚠️ Mentioned in passing only - skipping PD generation")
+                system_prompt = get_prompt_and_replace(
+                    step_key,
+                    {"N_QUOTES": N_QUOTES, "JSON_SCHEMA": schema},
+                    "SystemPrompt",
+                )
+                user_prompts = get_prompt_and_replace(
+                    step_key,
+                    {"PAPER_TEXT": paper_text, "GENE": gene_display},
+                    "UserPrompts",
+                )
+                # Call API
+                if PROVIDER == "anthropic":
+                    start = time.time()
+                    response = anthropic_client.messages.create(
+                        model=SUMMARY_MODEL,
+                        max_tokens=MAX_TOKENS,
+                        temperature=MODEL_TEMP,
+                        system=system_prompt,
+                        messages=[
+                            {"role": "user", "content": user_prompts[0]},
+                            {"role": "assistant", "content": "I have received the paper text."},
+                            {"role": "user", "content": user_prompts[1]},
+                        ]
+                    )
+                    usage = {
+                        "input_tokens": response.usage.input_tokens,
+                        "output_tokens": response.usage.output_tokens,
+                    }
+                    elapsed = time.time() - start
+                    raw = response.content[0].text
+                elif PROVIDER == "openrouter":
+                    rf = response_format_for_schema(step_key, schema)
+                    plugins = [{"id": "response-healing"}]
+                    raw, usage, elapsed = call_prompt(
+                        provider=PROVIDER,
+                        model=SUMMARY_MODEL,
+                        system_prompt=system_prompt,
+                        user_prompts=user_prompts,
+                        prefill_text="{",
+                        response_format=rf,
+                        plugins=plugins,
+                    )
+                else:
+                    raise ValueError(
+                        f"Unsupported PROVIDER '{PROVIDER}' in process_batch_fallback. Use 'anthropic' or 'openrouter'.")
+
+                # Parse result
+                result = format_with_retry(raw, VALIDATION_SCHEMA)
+                # elapsed = time.time() - start # dont overwrite call_prompt tiome
+
+                if not result:
+                    print(f"✗ Parse failed ({elapsed:.1f}s)")
+                    error_data = {"error": "JSON parsing failed", "raw_response": raw[:1000]}
+                    if save:
+                        save_result(pubmed_id, gene_id, error_data, False, "getGeneSummary", usage, elapsed)
                     results.append({
                         "pubmed_id": pubmed_id,
                         "gene_id": gene_id,
-                        "success": True,
-                        "data": result,
-                        "usage": usage,
-                        "summary_time": elapsed,
-                        "in_passing": True,
+                        "success": False,
+                        "error": "JSON parsing failed",
                         "paper_available": True,
                         "alias_in_text": True,
                         "mentions": mentions
                     })
-                    continue  # Skip to next gene
+                else:
+                    # Summary success
+                    if save:
+                        save_result(pubmed_id, gene_id, result, True, "getGeneSummary", usage, elapsed)
 
-                # Generate PDs
-                try:
-                    pd_result, pd_usage, pd_time = generatePDs(
-                        summary_json=result,
-                        gene_text=gene_display,
-                        n_pds=N_PDs
-                    )
-
-                    if pd_result and save:
-                        save_result(pubmed_id, gene_id, pd_result, True, "generatePDs", pd_usage, pd_time)
-                        print(f"✓ PDs ({pd_time:.1f}s)", end=" | ")
-
-                        # Verify PDs
-                        verify_result, verify_usage, verify_time = verifyPDs(
-                            suggested_pds=pd_result,
-                            paper_text=paper_text,
-                            gene_text=gene_display,
-                            use_caching=False
-                        )
-
-                        if verify_result and save:
-                            save_result(pubmed_id, gene_id, verify_result, True, "verifyPDs", verify_usage, verify_time)
-                            total_time = elapsed + pd_time + verify_time
-                            print(f"✓ Verified ({verify_time:.1f}s) | Total: {total_time:.1f}s")
-                        else:
-                            print(f"✗ Verify failed")
-                    else:
-                        print(f"✗ PD gen failed")
-                except Exception as e:
-                    print(f"✗ PD error: {e}")
-
+                    print(f"✓ Summary ({elapsed:.1f}s)", end=" | ")
+            # Check if gene is only mentioned in passing
+            if check_if_in_passing(result):
+                print(f"⚠️ Mentioned in passing only - skipping PD generation")
                 results.append({
                     "pubmed_id": pubmed_id,
                     "gene_id": gene_id,
                     "success": True,
                     "data": result,
+                    "usage": usage,
+                    "summary_time": elapsed,
+                    "in_passing": True,
                     "paper_available": True,
                     "alias_in_text": True,
                     "mentions": mentions
                 })
+                continue  # Skip to next gene
+
+
+            # STEP 2: Generate PDs
+            try:
+                print("generating PDs...", end=" ", flush=True)
+                pd_result, pd_usage, pd_time = generatePDs(
+                    summary_json=result,
+                    gene_text=gene_display,
+                    n_pds=N_PDs
+                )
+
+                if not pd_result:
+                    print("✗ PD gen failed")
+                    if save:
+                        save_result(
+                            pubmed_id, gene_id,
+                            {"error": "PD generation failed"},
+                            False, "generatePDs", pd_usage, pd_time
+                        )
+                    results.append({
+                        "pubmed_id": pubmed_id,
+                        "gene_id": gene_id,
+                        "success": False,
+                        "error": "PD generation failed",
+                        "paper_available": True,
+                        "alias_in_text": True,
+                        "mentions": mentions
+                    })
+                    continue
+
+                if save:
+                    save_result(pubmed_id, gene_id, pd_result, True, "generatePDs", pd_usage, pd_time)
+
+                print(f"✓ PDs ({pd_time:.1f}s)", end=" | ")
+
+            except Exception as e:
+                print(f"✗ PD error: {e}")
+                results.append({
+                    "pubmed_id": pubmed_id,
+                    "gene_id": gene_id,
+                    "success": False,
+                    "error": f"PD generation error: {str(e)}",
+                    "paper_available": True,
+                    "alias_in_text": True,
+                    "mentions": mentions
+                })
+                continue
+
+            # STEP 3: Verify PDs
+            try:
+                print("verifying...", end=" ", flush=True)
+                verify_result, verify_usage, verify_time = verifyPDs(
+                    suggested_pds=pd_result,
+                    paper_text=paper_text,
+                    gene_text=gene_display,
+                    use_caching=False
+                )
+
+                if not verify_result:
+                    print("✗ Verify failed")
+                    if save:
+                        save_result(
+                            pubmed_id, gene_id,
+                            {"error": "PD verification failed"},
+                            False, "verifyPDs", verify_usage, verify_time
+                        )
+                    results.append({
+                        "pubmed_id": pubmed_id,
+                        "gene_id": gene_id,
+                        "success": False,
+                        "error": "PD verification failed",
+                        "paper_available": True,
+                        "alias_in_text": True,
+                        "mentions": mentions
+                    })
+                    continue
+
+                if save:
+                    save_result(pubmed_id, gene_id, verify_result, True, "verifyPDs", verify_usage, verify_time)
+
+                total_time = elapsed + pd_time + verify_time
+                print(f"✓ Verified ({verify_time:.1f}s) | Total: {total_time:.1f}s")
+
+            except Exception as e:
+                print(f"✗ verify PD error: {e}")
+                results.append({
+                    "pubmed_id": pubmed_id,
+                    "gene_id": gene_id,
+                    "success": False,
+                    "error": f"PD verification error: {str(e)}",
+                    "paper_available": True,
+                    "alias_in_text": True,
+                    "mentions": mentions
+                })
+                continue
+
+            results.append({
+                "pubmed_id": pubmed_id,
+                "gene_id": gene_id,
+                "success": True,
+                "data": result,
+                "usage": usage,
+                "summary_time": elapsed,
+                "pd_time": pd_time,
+                "verify_time": verify_time,
+                "total_time": total_time,
+                "paper_available": True,
+                "alias_in_text": True,
+                "mentions": mentions
+            })
 
         except Exception as e:
             elapsed = time.time() - start
@@ -802,10 +1121,11 @@ def process_batch_fallback(pairs: List[Tuple[str, str, str]], save: bool = True)
 
     return results
 
-
 def create_batch_requests(pairs: List[Tuple[str, str, str]]) -> List[dict]:
     """Create batch requests for low-density papers."""
     batch_requests = []
+    step_key = "getGeneSummary"
+    schema = global_prompts_and_schema[step_key]["ValidationSchema"]
 
     for pubmed_id, gene_id, host_db in pairs:
         try:
@@ -813,8 +1133,16 @@ def create_batch_requests(pairs: List[Tuple[str, str, str]]) -> List[dict]:
             aliases = get_gene_synonyms(gene_id, paper_text, host_db)
             gene_display = f"{gene_id}, also known as {', '.join(aliases)}" if aliases else gene_id
 
-            system_prompt = SUMMARY_SYSTEM_PROMPT.replace("[JSON_SCHEMA]", json.dumps(VALIDATION_SCHEMA))
-            system_prompt = system_prompt.replace("[N_QUOTES]", str(N_QUOTES))
+            system_prompt = get_prompt_and_replace(
+                step_key,
+                {"N_QUOTES": N_QUOTES, "JSON_SCHEMA": schema},
+                "SystemPrompt",
+            )
+            user_prompts = get_prompt_and_replace(
+                step_key,
+                {"PAPER_TEXT": paper_text, "GENE": gene_display},
+                "UserPrompts",
+            )
 
             batch_requests.append({
                 "custom_id": f"{pubmed_id}_{gene_id}",
@@ -824,9 +1152,9 @@ def create_batch_requests(pairs: List[Tuple[str, str, str]]) -> List[dict]:
                     "temperature": MODEL_TEMP,
                     "system": system_prompt,
                     "messages": [
-                        {"role": "user", "content": f"Do not respond. Here is the paper text:\n\n{paper_text}"},
+                        {"role": "user", "content": user_prompts[0]},
                         {"role": "assistant", "content": "I have received the paper text."},
-                        {"role": "user", "content": f"Generate summary for {gene_display}."}
+                        {"role": "user", "content": user_prompts[1]},
                     ]
                 }
             })
@@ -835,6 +1163,168 @@ def create_batch_requests(pairs: List[Tuple[str, str, str]]) -> List[dict]:
 
     return batch_requests
 
+# def process_batch(pairs: List[Tuple[str, str, str]], save: bool = True) -> List[dict]:
+#     """Process pairs using batch API (with fallback to standard if unavailable)."""
+#     print(f"\n{'=' * 80}")
+#     print(f"BATCH PROCESSING: {len(pairs)} pairs")
+#     print(f"{'=' * 80}")
+#
+#     # Check if batch API is available
+#     if not hasattr(anthropic_client.messages, 'batches'):
+#         print("Warning: Batch API not available in your Anthropic SDK version.")
+#         print("Falling back to standard processing...")
+#         print("To enable batch API, upgrade: pip install --upgrade anthropic")
+#         print()
+#         return process_batch_fallback(pairs, save)
+#
+#     batch_requests = create_batch_requests(pairs)
+#     if not batch_requests:
+#         return []
+#
+#     try:
+#         batch = anthropic_client.messages.batches.create(requests=batch_requests)
+#         batch_id = batch.id
+#         print(f"Batch submitted: {batch_id}")
+#     except Exception as e:
+#         print(f"Batch submission failed: {e}")
+#         print("Falling back to standard processing...")
+#         return process_batch_fallback(pairs, save)
+#
+#     # Wait for completion
+#     while True:
+#         batch = anthropic_client.messages.batches.retrieve(batch_id)
+#         counts = batch.request_counts
+#         total = counts.processing + counts.succeeded + counts.errored
+#         print(f"  Status: {batch.processing_status} | Succeeded: {counts.succeeded}/{total}", end="\r")
+#
+#         if batch.processing_status in ["ended", "canceled", "expired"]:
+#             break
+#         time.sleep(60)
+#
+#     print(f"\n✓ Batch completed")
+#
+#     # Retrieve results
+#     results = []
+#     for result in anthropic_client.messages.batches.results(batch_id):
+#         pmid, gene_id = result.custom_id.split("_", 1)
+#         mention_count = 0
+#         if result.result.type == "succeeded":
+#             try:
+#                 content = result.result.message.content[0].text
+#                 parsed = format_with_retry(content, VALIDATION_SCHEMA)
+#
+#                 if not parsed:
+#                     # Parsing failed
+#                     error_data = {
+#                         "error": "JSON parsing failed",
+#                         "raw_response": content[:1000]
+#                     }
+#                     if save:
+#                         save_result(pmid, gene_id, error_data, False, "getGeneSummary")
+#                     results.append({
+#                         "pubmed_id": pmid,
+#                         "gene_id": gene_id,
+#                         "success": False,
+#                         "error": "JSON parsing failed",
+#                         "paper_available": True,
+#                         "alias_in_text": True,
+#                         "mentions": 0,
+#                     })
+#                     continue  # ✅ don't fall through
+#
+#                if check_if_in_passing(parsed):
+#                      print(f"  ⚠️ {gene_id} in passing - PDs skipped")
+#                      results.append({
+#                          "pubmed_id": pmid,
+#                          "gene_id": gene_id,
+#                          "success": False,
+#                          "error": "JSON parsing failed",
+#                          "paper_available": True,  # Paper was available (batch succeeded)
+#                          "alias_in_text": True,    # Assumed true if batch API succeeded
+#                          "mentions": 0             # Unknown for batch
+#                         })
+#                         continue # skip to next result without generating PD
+#                 else:
+#                     # Summary success - now process PDs
+#                     if save:
+#                         save_result(pmid, gene_id, parsed, True, "getGeneSummary")
+#
+#                     # For PD steps, we need paper text and gene display
+#                     # Extract host_db from pairs
+#                     host_db = next((hdb for p, g, hdb in pairs if p == pmid and g == gene_id), None)
+#
+#                     paper_available = True
+#                     alias_in_text = True  # Assumed if summary was generated
+#
+#                     if host_db:
+#                         try:
+#                             # Fetch paper and prepare gene display
+#                             paper_text = get_paper_text(pmid)
+#
+#                             # Check gene in text
+#                             alias_in_text, mention_count = check_gene_in_text(gene_id, paper_text, host_db)
+#
+#                             aliases = get_gene_synonyms(gene_id, paper_text, host_db)
+#                             gene_display = f"{gene_id}, also known as {', '.join(aliases)}" if aliases else gene_id
+#
+#                             # Generate PDs
+#                             print(f"generating PDs...", end=" ", flush=True)
+#                             pd_result, pd_usage, pd_time = generatePDs(
+#                                 summary_json=parsed,
+#                                 gene_text=gene_display,
+#                                 n_pds=N_PDs
+#                             )
+#
+#                             if pd_result and save:
+#                                 save_result(pmid, gene_id, pd_result, True, "generatePDs", pd_usage, pd_time)
+#
+#                             # Verify PDs (use caching even though batch papers are low-density)
+#                             if pd_result:
+#                                 verify_result, verify_usage, verify_time = verifyPDs(
+#                                     suggested_pds=pd_result,
+#                                     paper_text=paper_text,
+#                                     gene_text=gene_display,
+#                                     use_caching=False  # Don't use caching for batch (single genes)
+#                                 )
+#
+#                                 if verify_result and save:
+#                                     save_result(pmid, gene_id, verify_result, True, "verifyPDs", verify_usage, verify_time)
+#
+#                         except Exception as e:
+#                             print(f"  Warning: PD processing failed for {gene_id}: {e}")
+#
+#                     results.append({
+#                         "pubmed_id": pmid,
+#                         "gene_id": gene_id,
+#                         "success": True,
+#                         "data": parsed,
+#                         "paper_available": paper_available,
+#                         "alias_in_text": alias_in_text,
+#                         "mentions": mention_count if alias_in_text else 0
+#                     })
+#             except Exception as e:
+#                 results.append({
+#                     "pubmed_id": pmid,
+#                     "gene_id": gene_id,
+#                     "success": False,
+#                     "error": str(e),
+#                     "paper_available": True,  # Batch succeeded so paper was available
+#                     "alias_in_text": None,    # Unknown if exception occurred
+#                     "mentions": 0
+#                 })
+#         else:
+#             results.append({
+#                 "pubmed_id": pmid,
+#                 "gene_id": gene_id,
+#                 "success": False,
+#                 "error": result.result.error.message,
+#                 "paper_available": None,  # Unknown if batch failed
+#                 "alias_in_text": None,
+#                 "mentions": 0
+#             })
+#
+#     return results
+#
 def process_batch(pairs: List[Tuple[str, str, str]], save: bool = True) -> List[dict]:
     """Process pairs using batch API (with fallback to standard if unavailable)."""
     print(f"\n{'=' * 80}")
@@ -842,7 +1332,7 @@ def process_batch(pairs: List[Tuple[str, str, str]], save: bool = True) -> List[
     print(f"{'=' * 80}")
 
     # Check if batch API is available
-    if not hasattr(anthropic_client.messages, 'batches'):
+    if not hasattr(anthropic_client.messages, "batches"):
         print("Warning: Batch API not available in your Anthropic SDK version.")
         print("Falling back to standard processing...")
         print("To enable batch API, upgrade: pip install --upgrade anthropic")
@@ -873,12 +1363,17 @@ def process_batch(pairs: List[Tuple[str, str, str]], save: bool = True) -> List[
             break
         time.sleep(60)
 
-    print(f"\n✓ Batch completed")
+    print("\n✓ Batch completed")
 
     # Retrieve results
-    results = []
+    results: List[dict] = []
     for result in anthropic_client.messages.batches.results(batch_id):
         pmid, gene_id = result.custom_id.split("_", 1)
+
+        # Defaults (batch mode doesn't compute mentions unless we fetch paper later)
+        mention_count = 0
+        paper_available = None
+        alias_in_text = None
 
         if result.result.type == "succeeded":
             try:
@@ -889,80 +1384,95 @@ def process_batch(pairs: List[Tuple[str, str, str]], save: bool = True) -> List[
                     # Parsing failed
                     error_data = {
                         "error": "JSON parsing failed",
-                        "raw_response": content[:1000]
+                        "raw_response": content[:1000],
                     }
                     if save:
                         save_result(pmid, gene_id, error_data, False, "getGeneSummary")
 
-                    if check_if_in_passing(parsed):
-                        print(f"  ⚠️ {gene_id} in passing - PDs skipped")
-                        results.append({
-                            "pubmed_id": pmid,
-                            "gene_id": gene_id,
-                            "success": False,
-                            "error": "JSON parsing failed",
-                            "paper_available": True,  # Paper was available (batch succeeded)
-                            "alias_in_text": True,    # Assumed true if batch API succeeded
-                            "mentions": 0             # Unknown for batch
-                        })
-                        continue # skip to next result without generating PD
-                else:
-                    # Summary success - now process PDs
-                    if save:
-                        save_result(pmid, gene_id, parsed, True, "getGeneSummary")
+                    results.append({
+                        "pubmed_id": pmid,
+                        "gene_id": gene_id,
+                        "success": False,
+                        "error": "JSON parsing failed",
+                        "paper_available": True,   # Batch succeeded so paper was available to Anthropic
+                        "alias_in_text": True,     # Assumed true if summary generation succeeded upstream
+                        "mentions": 0,             # Unknown for batch
+                    })
+                    continue  # don't fall through
 
-                    # For PD steps, we need paper text and gene display
-                    # Extract host_db from pairs
-                    host_db = next((hdb for p, g, hdb in pairs if p == pmid and g == gene_id), None)
+                # Summary success - now process PDs
+                if save:
+                    save_result(pmid, gene_id, parsed, True, "getGeneSummary")
 
-                    paper_available = True
-                    alias_in_text = True  # Assumed if summary was generated
-
-                    if host_db:
-                        try:
-                            # Fetch paper and prepare gene display
-                            paper_text = get_paper_text(pmid)
-
-                            # Check gene in text
-                            alias_in_text, mention_count = check_gene_in_text(gene_id, paper_text, host_db)
-
-                            aliases = get_gene_synonyms(gene_id, paper_text, host_db)
-                            gene_display = f"{gene_id}, also known as {', '.join(aliases)}" if aliases else gene_id
-
-                            # Generate PDs
-                            pd_result, pd_usage, pd_time = generatePDs(
-                                summary_json=parsed,
-                                gene_text=gene_display,
-                                n_pds=N_PDs
-                            )
-
-                            if pd_result and save:
-                                save_result(pmid, gene_id, pd_result, True, "generatePDs", pd_usage, pd_time)
-
-                            # Verify PDs (use caching even though batch papers are low-density)
-                            if pd_result:
-                                verify_result, verify_usage, verify_time = verifyPDs(
-                                    suggested_pds=pd_result,
-                                    paper_text=paper_text,
-                                    gene_text=gene_display,
-                                    use_caching=False  # Don't use caching for batch (single genes)
-                                )
-
-                                if verify_result and save:
-                                    save_result(pmid, gene_id, verify_result, True, "verifyPDs", verify_usage, verify_time)
-
-                        except Exception as e:
-                            print(f"  Warning: PD processing failed for {gene_id}: {e}")
-
+                # If gene is only mentioned in passing, skip PD generation
+                if check_if_in_passing(parsed):
+                    print(f"  ⚠️ {gene_id} in passing - PDs skipped")
                     results.append({
                         "pubmed_id": pmid,
                         "gene_id": gene_id,
                         "success": True,
                         "data": parsed,
-                        "paper_available": paper_available,
-                        "alias_in_text": alias_in_text,
-                        "mentions": mention_count if alias_in_text else 0
+                        "in_passing": True,
+                        "paper_available": True,  # Batch succeeded so paper was available
+                        "alias_in_text": True,    # Assumed true if summary was generated
+                        "mentions": 0,            # Unknown for batch
                     })
+                    continue  # skip to next result without generating PD
+
+                # For PD steps, we need paper text and gene display
+                # Extract host_db from pairs
+                host_db = next((hdb for p, g, hdb in pairs if p == pmid and g == gene_id), None)
+
+                paper_available = True
+                alias_in_text = True  # Assumed if summary was generated
+
+                if host_db:
+                    try:
+                        # Fetch paper and prepare gene display
+                        paper_text = get_paper_text(pmid)
+
+                        # Check gene in text
+                        alias_in_text, mention_count = check_gene_in_text(gene_id, paper_text, host_db)
+
+                        aliases = get_gene_synonyms(gene_id, paper_text, host_db)
+                        gene_display = f"{gene_id}, also known as {', '.join(aliases)}" if aliases else gene_id
+
+                        # Generate PDs
+                        print("generating PDs...", end=" ", flush=True)
+                        pd_result, pd_usage, pd_time = generatePDs(
+                            summary_json=parsed,
+                            gene_text=gene_display,
+                            n_pds=N_PDs,
+                        )
+
+                        if pd_result and save:
+                            save_result(pmid, gene_id, pd_result, True, "generatePDs", pd_usage, pd_time)
+
+                        # Verify PDs (use caching even though batch papers are low-density)
+                        if pd_result:
+                            verify_result, verify_usage, verify_time = verifyPDs(
+                                suggested_pds=pd_result,
+                                paper_text=paper_text,
+                                gene_text=gene_display,
+                                use_caching=False,  # Don't use caching for batch (single genes)
+                            )
+
+                            if verify_result and save:
+                                save_result(pmid, gene_id, verify_result, True, "verifyPDs", verify_usage, verify_time)
+
+                    except Exception as e:
+                        print(f"  Warning: PD processing failed for {gene_id}: {e}")
+
+                results.append({
+                    "pubmed_id": pmid,
+                    "gene_id": gene_id,
+                    "success": True,
+                    "data": parsed,
+                    "paper_available": paper_available,
+                    "alias_in_text": alias_in_text,
+                    "mentions": mention_count if alias_in_text else 0,
+                })
+
             except Exception as e:
                 results.append({
                     "pubmed_id": pmid,
@@ -971,7 +1481,7 @@ def process_batch(pairs: List[Tuple[str, str, str]], save: bool = True) -> List[
                     "error": str(e),
                     "paper_available": True,  # Batch succeeded so paper was available
                     "alias_in_text": None,    # Unknown if exception occurred
-                    "mentions": 0
+                    "mentions": 0,
                 })
         else:
             results.append({
@@ -981,12 +1491,27 @@ def process_batch(pairs: List[Tuple[str, str, str]], save: bool = True) -> List[
                 "error": result.result.error.message,
                 "paper_available": None,  # Unknown if batch failed
                 "alias_in_text": None,
-                "mentions": 0
+                "mentions": 0,
             })
 
     return results
 
+def _step_succeeded_any_model(data: Dict[str, Any], step_key: str, gene_id: str) -> bool:
+    step_node = (data.get(step_key) or {}).get(gene_id)
+    if not isinstance(step_node, dict):
+        return False
+    # any model key under this gene
+    for v in step_node.values():
+        if isinstance(v, dict) and v.get("success") and v.get("data"):
+            return True
+    return False
 
+def _step_succeeded_for_model(data: Dict[str, Any], step_key: str, gene_id: str, model: str) -> bool:
+    step_node = (data.get(step_key) or {}).get(gene_id)
+    if not isinstance(step_node, dict):
+        return False
+    model_node = step_node.get(model)
+    return isinstance(model_node, dict) and bool(model_node.get("success")) and bool(model_node.get("data"))
 
 def process_from_csv(csv_path: str, save: bool = True) -> pd.DataFrame:
     """
@@ -1039,7 +1564,7 @@ def process_from_csv(csv_path: str, save: bool = True) -> pd.DataFrame:
         print(f"\nYour CSV has: {', '.join(df.columns.tolist())}")
         print(f"\nEither:")
         print(f"  1. Rename your CSV columns to match expected names, OR")
-        print(f"  2. Update CSV_COLUMNS dictionary at line ~50 in the script")
+        print(f"  2. Update CSV_COLUMNS dictionary at line ~50 in the config script")
         return pd.DataFrame()
 
     # Optional filter columns (if they exist, use them; if not, skip filtering)
@@ -1108,8 +1633,10 @@ def process_from_csv(csv_path: str, save: bool = True) -> pd.DataFrame:
         print(f"\n{'=' * 80}")
         print(f"PHASE 1: CACHING ({len(high_density_papers)} papers)")
         print(f"{'=' * 80}")
+        # pmid, genes = next(iter(high_density_papers.items()))
         for pmid, genes in high_density_papers.items():
-            results = process_paper_with_caching(pmid, genes, save=save)
+            print(genes)
+            results = process_paper_with_caching(pubmed_id=pmid, gene_list = genes, save=save)
             all_results.extend(results)
 
             # Print summary for this paper
@@ -1120,31 +1647,75 @@ def process_from_csv(csv_path: str, save: bool = True) -> pd.DataFrame:
 
     # Low-density papers with batch
     if USE_BATCH_FOR_LOW_DENSITY:
-        low_density_pairs = [(pmid, g[0], g[1]) for pmid, genes in grouped.items()
-                             if len(genes) < MIN_GENES_FOR_CACHING for g in genes]
+        low_density_pairs = [
+            (pmid, g[0], g[1])
+            for pmid, genes in grouped.items()
+            if len(genes) < MIN_GENES_FOR_CACHING
+            for g in genes
+        ]
 
         # Filter out already-processed pairs if not overwriting
         if not OVERWRITE_EXISTING:
-            original_count = len(low_density_pairs)
-            low_density_pairs = [(pmid, gene_id, host_db) for pmid, gene_id, host_db in low_density_pairs
-                                 if not is_gene_already_processed(pmid, gene_id)]
-            skipped_count = original_count - len(low_density_pairs)
-            if skipped_count > 0:
-                print(f"  Skipping {skipped_count} already-processed pairs")
+            fully_done = []
+            needs_resume = []  # summary exists; PD and/or verify missing
+            needs_summary = []  # no usable summary yet
 
-        # Deduplicate pairs (in case same pair appears multiple times in CSV)
-        original_count = len(low_density_pairs)
-        low_density_pairs = list(set(low_density_pairs))  # Remove duplicates
-        duplicate_count = original_count - len(low_density_pairs)
-        if duplicate_count > 0:
-            print(f"  Removed {duplicate_count} duplicate pairs from batch")
+            for pmid, gene_id, host_db in low_density_pairs:
+                if is_gene_already_processed(
+                        pmid,
+                        gene_id,
+                        check_all_steps=True,
+                        flex_model=True,
+                ):
+                    fully_done.append((pmid, gene_id, host_db))
+                    continue
 
-        if low_density_pairs:
+                existing_summary = load_existing_summary(pmid, gene_id)
+
+                if existing_summary is not None:
+                    needs_resume.append((pmid, gene_id, host_db))
+                else:
+                    needs_summary.append((pmid, gene_id, host_db))
+
+            if fully_done:
+                print(f"  Skipping {len(fully_done)} already-processed pairs")
+            if needs_resume:
+                print(f"  Resuming {len(needs_resume)} pairs with existing summaries")
+            if needs_summary:
+                print(f"  Batch-processing {len(needs_summary)} pairs needing summaries")
+
+            low_density_pairs_resume = needs_resume
+            low_density_pairs_batch = needs_summary
+        else:
+            low_density_pairs_resume = []
+            low_density_pairs_batch = low_density_pairs
+
+        if low_density_pairs_resume:
             print(f"\n{'=' * 80}")
-            print(f"PHASE 2: BATCH PROCESSING")
+            print(f"PHASE 2A: RESUME PARTIAL LOW-DENSITY PAIRS ({len(low_density_pairs_resume)} pairs)")
             print(f"{'=' * 80}")
-            results = process_batch(low_density_pairs, save=save)
+            results = process_batch_fallback(list(set(low_density_pairs_resume)), save=save)
             all_results.extend(results)
+
+        if low_density_pairs_batch:
+            print(f"\n{'=' * 80}")
+            print(f"PHASE 2B: BATCH PROCESSING ({len(low_density_pairs_batch)} pairs)")
+            print(f"{'=' * 80}")
+            results = process_batch(list(set(low_density_pairs_batch)), save=save)
+            all_results.extend(results)
+        # # Deduplicate pairs (in case same pair appears multiple times in CSV)
+        # original_count = len(low_density_pairs)
+        # low_density_pairs = list(set(low_density_pairs))  # Remove duplicates
+        # duplicate_count = original_count - len(low_density_pairs)
+        # if duplicate_count > 0:
+        #     print(f"  Removed {duplicate_count} duplicate pairs from batch")
+        #
+        # if low_density_pairs:
+        #     print(f"\n{'=' * 80}")
+        #     print(f"PHASE 2: BATCH PROCESSING")
+        #     print(f"{'=' * 80}")
+        #     results = process_batch(low_density_pairs, save=save)
+        #     all_results.extend(results)
 
     # Create results DataFrame
     results_df = pd.DataFrame([
@@ -1188,19 +1759,16 @@ def process_from_csv(csv_path: str, save: bool = True) -> pd.DataFrame:
                 for step_key, model in [
                     ("getGeneSummary", SUMMARY_MODEL),
                     ("generatePDs", PD_GENERATOR_MODEL),
-                    ("verifyPDs", PD_VERIFIER_MODEL)
+                    ("verifyPDs", PD_VERIFIER_MODEL),
                 ]:
-                    step_data = data.get(step_key, {}).get(gene_id, {})
-                    model_data = step_data.get(model, {})
-
-                    # Map step_key to column name
                     if step_key == "getGeneSummary":
-                        col_name = "Summary"
+                        # ✅ summary complete if ANY model has a successful payload
+                        step_status["Summary"] = _step_succeeded_any_model(data, step_key, gene_id)
                     else:
-                        col_name = step_key
+                        # PD steps: keep current behavior (only count current model) unless you want "any model" here too
+                        step_status[step_key] = _step_succeeded_for_model(data, step_key, gene_id, model)
 
-                    if model_data.get("success") and model_data.get("data"):
-                        step_status[col_name] = True
+
             except:
                 pass
 
@@ -1242,27 +1810,28 @@ def process_from_csv(csv_path: str, save: bool = True) -> pd.DataFrame:
 
     return results_df
 
+csv_path = "curated_data/outstanding_to_process_2025_04.csv"
+process_from_csv(csv_path, save=True)
 
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) < 2:
-        print("Usage: python pipeline.py <csv_file_path>")
-        print("\nExample: python pipeline.py gene_paper_pairs.csv")
-        sys.exit(1)
-
-    csv_path = sys.argv[1]
-
-    if not Path(csv_path).exists():
-        print(f"Error: File not found: {csv_path}")
-        sys.exit(1)
-
-    # Process
-    results_df = process_from_csv(csv_path, save=True)
-
-    # Save results summary
-    if not results_df.empty:
-        output_path = csv_path.replace('.csv', '_results.csv')
-        results_df.to_csv(output_path, index=False)
-        print(f"\nResults saved to: {output_path}")
+# if __name__ == "__main__":
+#     import sys
+#
+#     if len(sys.argv) < 2:
+#         print("Usage: python pipeline.py <csv_file_path>")
+#         print("\nExample: python pipeline.py gene_paper_pairs.csv")
+#         sys.exit(1)
+#
+#     csv_path = sys.argv[1]
+#
+#     if not Path(csv_path).exists():
+#         print(f"Error: File not found: {csv_path}")
+#         sys.exit(1)
+#
+#     # Process
+#     results_df = process_from_csv(csv_path, save=True)
+#
+#     # Save results summary
+#     if not results_df.empty:
+#         output_path = csv_path.replace('.csv', '_results.csv')
+#         results_df.to_csv(output_path, index=False)
+#         print(f"\nResults saved to: {output_path}")
