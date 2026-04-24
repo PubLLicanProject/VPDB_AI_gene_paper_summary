@@ -13,14 +13,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # API Setup
 anthropic_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+
+
 # Models
-SUMMARY_MODEL = "claude-sonnet-4-20250514"
-PD_GENERATOR_MODEL = "claude-sonnet-4-20250514"
-PD_VERIFIER_MODEL = "claude-sonnet-4-20250514"
-FORMATTER_MODEL = "claude-sonnet-4-20250514"
+# PROVIDER = "anthropic"
+# SUMMARY_MODEL = "claude-sonnet-4-20250514"
+# PD_GENERATOR_MODEL = "claude-sonnet-4-20250514"
+# PD_VERIFIER_MODEL = "claude-sonnet-4-20250514"
+# FORMATTER_MODEL = "claude-sonnet-4-20250514"
+
+EXISTING_SUMMARY_MODEL = "claude-sonnet-4-5-20250929"    # key pre-existing saved summaries are stored under
+
+PROVIDER = "openrouter"
+OPENROUTER_JSON_PLUGINS = [{"id": "response-healing"}]
+OPENROUTER_CACHE_CFG = {"enabled": True, "ttl": "1h"}
+
+# update to openrouter naming
+SUMMARY_MODEL = "anthropic/claude-sonnet-4-5"    # for any fresh summary generation
+PD_GENERATOR_MODEL = "anthropic/claude-sonnet-4"
+PD_VERIFIER_MODEL = "anthropic/claude-sonnet-4"
+FORMATTER_MODEL = "anthropic/claude-sonnet-4"
 
 
 # Processing Parameters
@@ -32,19 +48,20 @@ HTTP_TIMEOUT = 30
 N_PDs = 3  # Maximum number of PDs to generate
 
 # Output
-OUT_DIR = Path("./out/VPDB_UserComments_batch")
+OUT_DIR = Path("./out/summaries")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Processing Strategy
 MIN_GENES_FOR_CACHING = 3  # Use caching if paper has 3+ genes
-USE_BATCH_FOR_LOW_DENSITY = True  # Use batch API for papers with <3 genes (falls back to standard if unavailable)
+# USE_BATCH_FOR_LOW_DENSITY = True  # Use batch API for papers with <3 genes (falls back to standard if unavailable)
+USE_BATCH_FOR_LOW_DENSITY = True  # Anthropic Batch API not available via OpenRouter
 OVERWRITE_EXISTING = False  # Set to True to reprocess already-completed pairs
 
 # CSV Column Mapping (adjust these if your CSV has different column names)
 CSV_COLUMNS = {
-    'gene_id': 'Gene ID',        # Column containing gene IDs (e.g., "PF3D7_1234")
-    'pmid': 'PMID_Final',        # Column containing PubMed IDs (e.g., "12345678")
-    'database': 'Database',       # Column containing database names (e.g., "plasmodb", "toxodb")
+    'gene_id': 'gene_ID',        # Column containing gene IDs (e.g., "PF3D7_1234")
+    'pmid': 'pmid',        # Column containing PubMed IDs (e.g., "12345678")
+    'database': 'host_db',       # Column containing database names (e.g., "plasmodb", "toxodb")
     # Optional columns for filtering (will be used if present):
     'paper_available': 'paper_available',  # Boolean: whether paper is available in PMC
     'alias_in_text': 'alias_in_text'       # Boolean: whether gene alias found in paper

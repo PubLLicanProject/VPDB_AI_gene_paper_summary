@@ -2,8 +2,8 @@
   "getGeneSummary": {
     "PF3D7_1329700": {
       "gene_ID": "PF3D7_1329700",
-      "claude-sonnet-4-20250514": {
-        "model": "claude-sonnet-4-20250514",
+      "claude-sonnet-4-5-20250929": {
+        "model": "claude-sonnet-4-5-20250929",
         "success": true,
         "data": {
           "Aliases_in_paper": [
@@ -13,247 +13,63 @@
           ],
           "GeneSummary": [
             {
-              "bullet_point": "MAL13P1.156 is a 64 kDa protein containing an EF-hand domain (prediction e-value 2.80E-13) positioned between amino acids 234-518, with a signal anchor probability of 0.954 and 5 of 5 positive tests for apicoplast targeting peptide at its C-terminus.",
-              "evidence_location": "Results section 2.3",
+              "bullet_point": "MAL13P1.156 is a single exon gene (1599 bp) encoding a 64 kDa protein that contains an EF-hand calcium binding domain (prediction e-value 2.80E-13) at positions 234-518 amino acids, with a signal anchor (probability 0.954) and apicoplast targeting peptide at its C-terminus (5 of 5 positive tests).",
+              "evidence_location": "Results section 2.3, paragraph 1",
               "supporting_quotes": [
-                "MAL13P1.156 is a single exon gene (1599 bp) that codes for a 64 kDa protein and contains an EF-hand domain (prediction e-value, 2.80E \u221213) at the position between 234 and 518 amino acid of the deduced polypeptide",
-                "identified MAL13P1.156, a calcium binding protein that contain a signal anchor with probability of 0.954 and 5 of 5 positive tests for an apicoplast targeting peptide at its C-terminus"
+                "MAL13P1.156 is a single exon gene (1599 bp) that codes for a 64 kDa protein and contains an EF-hand domain (prediction e-value, 2.80E \u221213) at the position between 234 and 518 amino acid of the deduced polypeptide.",
+                "MAL13P1.156, a calcium binding protein that contain a signal anchor with probability of 0.954 and 5 of 5 positive tests for an apicoplast targeting peptide at its C-terminus."
               ]
             },
             {
-              "bullet_point": "The protein localizes to the apicoplast, showing characteristic single small compartment in early schizonts, elongated branched formation in late schizonts, and divided punctuate formations in daughter merozoites, with partial colocalization with apicoplast marker EF-Tu.",
-              "evidence_location": "Results section 2.3 and Figure 3",
+              "bullet_point": "The protein localizes to the apicoplast, as demonstrated by immunofluorescence microscopy showing characteristic apicoplast patterns (single small compartment in early schizonts, elongated branched formation in late schizonts, and divided punctuate formations in daughter merozoites) and partial colocalization with apicoplast marker EF-Tu.",
+              "evidence_location": "Results section 2.3, paragraphs 2-3; Figure 3(a), 3(c), 3(d)",
               "supporting_quotes": [
                 "immunofluorescence microscopy (IFA) of the transgenic cell line using the anti-GFP antibody shows the characteristic pattern of apicoplast localization with a single small compartment in the early schizonts, elongated branched formation in the late schizonts, and finally divided punctuate formations corresponding to new apicoplast precursors in the newly formed daughter merozoites",
                 "Finally there is partial but significant colocalization between MAL13P1.156 and the apicoplast marker EF-Tu"
               ]
             },
             {
-              "bullet_point": "Overexpression of MAL13P1.156 increases parasite resistance to ionomycin by approximately 2-fold (P value 0.01) at 0.5 \u03bcM ionomycin concentration, with survival rates comparable to parasites grown in medium supplemented with 500 \u03bcM CaCl2.",
-              "evidence_location": "Results section 2.3 and Figure 4",
-              "supporting_quotes": [
-                "At 0.5 \u03bcM of ionomycin (that roughly corresponds to the ionomycin IC50; see below), the survival of the PfACBP1 overexpressing cell line is ~2-fold higher (P value 0.01) compared to the nontransfected parasites",
-                "The survival rate of the transgenic cell line is comparable to the nontransfected parasites grown in the medium supplemented with 500 \u03bcM of CaCl2"
-              ]
-            },
-            {
-              "bullet_point": "The protein undergoes proteolytic processing upon import to the apicoplast, showing a full-length fusion protein of 91 kDa and a processed form of ~72 kDa, consistent with signal peptide cleavage.",
-              "evidence_location": "Results section 2.3 and Figure 3",
+              "bullet_point": "Western blot analysis of the MAL13P1.156-GFP fusion protein shows expression as a full-length 91 kDa protein (64 kDa + 27 kDa GFP) and a processed form of ~72 kDa, consistent with signal peptide cleavage upon import to the apicoplast.",
+              "evidence_location": "Results section 2.3, paragraph 2; Figure 3(b)",
               "supporting_quotes": [
                 "Western blot analyses show a strong expression of this protein as a full-length fusion protein of 91 kDa (64 kDa full-length protein plus 27 kDa GFP) and a processed form ~72 kDa",
-                "This proteolytic cleavage is consistent with the signal peptide processing upon import to the apicoplast"
+                "This proteolytic cleavage is consistent with the signal peptide processing upon import to the apicoplast."
               ]
             },
             {
-              "bullet_point": "Among 545 plastid targeted proteins analyzed, MAL13P1.156 showed the highest homology to the EF-hand consensus sequence and shares structural similarity with calcium binding proteins from other organisms including Entamoeba histolytica, Cryptosporidium parvum, and Toxoplasma gondii.",
-              "evidence_location": "Results section 2.3 and Discussion",
+              "bullet_point": "Overexpression of MAL13P1.156 (renamed PfACBP1) increases parasite resistance to ionomycin by approximately 2-fold (P value 0.01) at 0.5 \u03bcM ionomycin concentration, with survival rates comparable to non-transfected parasites grown in medium supplemented with 500 \u03bcM CaCl2.",
+              "evidence_location": "Results section 2.3, paragraph 4; Figure 4",
               "supporting_quotes": [
-                "In our bioinformatics analyses of the 545 plastid targeted proteins, PfACBP1 showed the highest homology to the EF-hand consensus sequence which suggests its crucial role in calcium-mediated regulatory function(s) in this compartment",
+                "At 0.5 \u03bcM of ionomycin (that roughly corresponds to the ionomycin IC50; see below), the survival of the PfACBP1 overexpressing cell line is ~2-fold higher (P value 0.01) compared to the nontransfected parasites",
+                "The survival rate of the transgenic cell line is comparable to the nontransfected parasites grown in the medium supplemented with 500 \u03bcM of CaCl2."
+              ]
+            },
+            {
+              "bullet_point": "The protein shows structural homology to several calcium binding proteins including EF-hand calcium binding protein from Entamoeba histolytica (E-value 0.002), CDPK3 from Cryptosporidium parvum (E-value 0.053), myristoylated NCS1p from Schizosaccharomyces pombe (E-value 0.10), and CDPK-1 from Toxoplasma gondii (E-value 0.35), with considerable conservation of the calcium binding domain.",
+              "evidence_location": "Results section 2.3, paragraph 1; Figure 3(e)",
+              "supporting_quotes": [
+                "A search of the RCSB Protein Data Bank (PDB) for structurally similar proteins retrieved several sequences of calcium binding proteins with the EF-hand calcium binding domain. These include an EF-hand calcium binding protein from Entamoeba histolytica (E-value 0.002, solution NMR), CDPK3 (calcium-dependent protein kinase-3) from Cryptosporidium parvum (E-value 0.053, X-ray diffraction), myristoylated NCS1p from Schizosaccharomyces pombe (E-value 0.10, solution NMR) and CDPK-1 (calcium-dependent protein kinase-1) from Toxoplasma gondii (E-value 0.35, X-ray diffraction).",
                 "Multiple alignments of the amino acids spanning the EF-hand domain (214th to 341th positions) show considerable conservation of the calcium binding domain between these structural homologues"
+              ]
+            },
+            {
+              "bullet_point": "MAL13P1.156 was identified through bioinformatics analysis of all 545 plastid-targeted nuclear encoded proteins and showed the highest homology to the EF-hand consensus sequence among apicoplast-targeted proteins.",
+              "evidence_location": "Results section 2.3, paragraph 1; Discussion section, paragraph 4",
+              "supporting_quotes": [
+                "For this we carried out bioinformatics analyses of all 545 plastid targeted nuclear encoded proteins and identified MAL13P1.156, a calcium binding protein",
+                "In our bioinformatics analyses of the 545 plastid targeted proteins, PfACBP1 showed the highest homology to the EF-hand consensus sequence which suggests its crucial role in calcium-mediated regulatory function(s) in this compartment."
               ]
             }
           ],
           "AdditionalInferences": [
-            "The protein likely functions as a calcium sensor and/or buffer in the apicoplast, similar to calcium binding proteins in plant chloroplasts",
-            "MAL13P1.156 may help retain higher calcium concentrations in the apicoplast through its calcium binding properties, protecting against calcium depletion",
-            "The protein represents a potential target for understanding calcium-dependent regulation of apicoplast gene expression",
-            "Given its role in calcium homeostasis, MAL13P1.156 could be explored as a potential drug target for liver stage malaria parasites"
+            "The increased ionomycin resistance conferred by PfACBP1 overexpression suggests the protein functions to retain calcium concentration in the apicoplast through its calcium binding properties, supporting a role in apicoplast calcium homeostasis.",
+            "The protein likely functions in calcium-dependent signaling within the apicoplast, potentially involved in sensing and/or buffering free Ca2+ ions similar to plant chloroplast counterparts.",
+            "PfACBP1 may play a role in regulating apicoplast gene expression through calcium-mediated mechanisms, given the observed effects of calcium ionophores on apicoplast transcription and the protein's calcium-binding properties.",
+            "The close proximity between MAL13P1.156-labeled compartments and mitochondria (labeled by mitotracker Red) is consistent with the known physical association between apicoplast and mitochondria in P. falciparum.",
+            "The protein represents a potential component of calcium-dependent regulatory mechanisms in the apicoplast, which could be explored as a drug target for liver stage malaria treatment."
           ],
-          "ShortSummary": "MAL13P1.156 (PfACBP1) is an apicoplast-targeted calcium binding protein containing an EF-hand domain that increases parasite resistance to calcium ionophores and likely plays a crucial role in calcium homeostasis within the apicoplast organelle.",
-          "only_in_passing": false
-        },
-        "usage": {
-          "input": 57,
-          "output": 1417,
-          "total": 1474
-        },
-        "seconds": 22.091091099893674
-      }
-    }
-  },
-  "verifyGeneSummary": {
-    "PF3D7_1329700": {
-      "gene_ID": "PF3D7_1329700",
-      "claude-sonnet-4-20250514": {
-        "model": "claude-sonnet-4-20250514",
-        "success": true,
-        "data": {
-          "type": "array",
-          "VerifiedSummary": [
-            {
-              "bullet_point": "MAL13P1.156 is a 64 kDa protein containing an EF-hand domain (prediction e-value 2.80E-13) positioned between amino acids 234-518, with a signal anchor probability of 0.954 and 5 of 5 positive tests for apicoplast targeting peptide at its C-terminus.",
-              "evidence_location": "Results section 2.3",
-              "supporting_quotes": [
-                "MAL13P1.156 is a single exon gene (1599 bp) that codes for a 64 kDa protein and contains an EF-hand domain (prediction e-value, 2.80E \u221213) at the position between 234 and 518 amino acid of the deduced polypeptide",
-                "identified MAL13P1.156, a calcium binding protein that contain a signal anchor with probability of 0.954 and 5 of 5 positive tests for an apicoplast targeting peptide at its C-terminus"
-              ],
-              "verification_status": "PASS",
-              "reason": "Accurate information with correct evidence location and supporting quotes"
-            },
-            {
-              "bullet_point": "The protein localizes to the apicoplast, showing characteristic single small compartment in early schizonts, elongated branched formation in late schizonts, and divided punctuate formations in daughter merozoites, with partial colocalization with apicoplast marker EF-Tu.",
-              "evidence_location": "Results section 2.3 and Figure 3",
-              "supporting_quotes": [
-                "immunofluorescence microscopy (IFA) of the transgenic cell line using the anti-GFP antibody shows the characteristic pattern of apicoplast localization with a single small compartment in the early schizonts, elongated branched formation in the late schizonts, and finally divided punctuate formations corresponding to new apicoplast precursors in the newly formed daughter merozoites",
-                "Finally there is partial but significant colocalization between MAL13P1.156 and the apicoplast marker EF-Tu"
-              ],
-              "verification_status": "PASS",
-              "reason": "Accurate description with correct supporting quotes"
-            },
-            {
-              "bullet_point": "Overexpression of MAL13P1.156 increases parasite resistance to ionomycin by approximately 2-fold (P value 0.01) at 0.5 \u03bcM ionomycin concentration, with survival rates comparable to parasites grown in medium supplemented with 500 \u03bcM CaCl2.",
-              "evidence_location": "Results section 2.3 and Figure 4",
-              "supporting_quotes": [
-                "At 0.5 \u03bcM of ionomycin (that roughly corresponds to the ionomycin IC50; see below), the survival of the PfACBP1 overexpressing cell line is ~2-fold higher (P value 0.01) compared to the nontransfected parasites",
-                "The survival rate of the transgenic cell line is comparable to the nontransfected parasites grown in the medium supplemented with 500 \u03bcM of CaCl2"
-              ],
-              "verification_status": "PASS",
-              "reason": "Accurate information with correct supporting quotes"
-            },
-            {
-              "bullet_point": "The protein undergoes proteolytic processing upon import to the apicoplast, showing a full-length fusion protein of 91 kDa and a processed form of ~72 kDa, consistent with signal peptide cleavage.",
-              "evidence_location": "Results section 2.3 and Figure 3",
-              "supporting_quotes": [
-                "Western blot analyses show a strong expression of this protein as a full-length fusion protein of 91 kDa (64 kDa full-length protein plus 27 kDa GFP) and a processed form ~72 kDa",
-                "This proteolytic cleavage is consistent with the signal peptide processing upon import to the apicoplast"
-              ],
-              "verification_status": "PASS",
-              "reason": "Accurate information with correct supporting quotes"
-            },
-            {
-              "bullet_point": "Among 545 plastid targeted proteins analyzed, MAL13P1.156 showed the highest homology to the EF-hand consensus sequence and shares structural similarity with calcium binding proteins from other organisms including Entamoeba histolytica, Cryptosporidium parvum, and Toxoplasma gondii.",
-              "evidence_location": "Results section 2.3 and Discussion",
-              "supporting_quotes": [
-                "In our bioinformatics analyses of the 545 plastid targeted proteins, PfACBP1 showed the highest homology to the EF-hand consensus sequence which suggests its crucial role in calcium-mediated regulatory function(s) in this compartment",
-                "Multiple alignments of the amino acids spanning the EF-hand domain (214th to 341th positions) show considerable conservation of the calcium binding domain between these structural homologues"
-              ],
-              "verification_status": "PASS",
-              "reason": "Accurate information with correct supporting quotes"
-            },
-            {
-              "bullet_point": "The protein is named P. falciparum apicoplast calcium binding protein 1 (PfACBP1) based on its apicoplast localization and calcium binding properties.",
-              "evidence_location": "Results section 2.3",
-              "supporting_quotes": [
-                "Based on these results we conclude that MAL13P1.156 localizes to the apicoplast and hence name this protein P. falciparum apicoplast calcium binding protein 1 (PfACBP1)"
-              ],
-              "verification_status": "NEW",
-              "reason": "Important naming information was missing from the original summary"
-            },
-            {
-              "bullet_point": "The protein shows close proximity to mitochondria labeled by mitotracker Red, consistent with the physical association of apicoplast and mitochondria in P. falciparum.",
-              "evidence_location": "Results section 2.3 and Figure 3",
-              "supporting_quotes": [
-                "IFA-based colocalization studies revealed a close proximity between the MAL13P1.156 labeled compartments and mitochondria labeled by mitotracker Red",
-                "This is consistent with physical association of apicoplast and mitochondria in P. falciparum"
-              ],
-              "verification_status": "NEW",
-              "reason": "Important localization detail was omitted from original summary"
-            }
-          ]
-        },
-        "usage": {
-          "input": 1498,
-          "output": 1615,
-          "total": 3113
-        },
-        "seconds": 16.579516400001012
-      }
-    }
-  },
-  "generatePDs": {
-    "PF3D7_1329700": {
-      "gene_ID": "PF3D7_1329700",
-      "claude-sonnet-4-20250514": {
-        "model": "claude-sonnet-4-20250514",
-        "success": true,
-        "data": {
-          "gene_id": "PF3D7_1329700",
-          "short_summary": "ACBP1 is an acyl-CoA binding protein that binds long-chain acyl-CoA esters and localizes to the cytoplasm, playing a role in lipid metabolism in Plasmodium falciparum.",
-          "PDs": [
-            {
-              "description": "acyl-CoA binding protein ACBP1",
-              "evidence_code": "IDA",
-              "code_reason": "Direct binding assays demonstrated specific binding to long-chain acyl-CoA esters"
-            },
-            {
-              "description": "acyl-CoA binding domain containing protein",
-              "evidence_code": "ISM",
-              "code_reason": "Contains conserved acyl-CoA binding domain identified through sequence analysis"
-            }
-          ]
-        },
-        "usage": {
-          "input": 2317,
-          "output": 214,
-          "total": 2531
-        },
-        "seconds": 4.232628799974918
-      }
-    }
-  },
-  "verifyPDs": {
-    "PF3D7_1329700": {
-      "gene_ID": "PF3D7_1329700",
-      "claude-sonnet-4-20250514": {
-        "model": "claude-sonnet-4-20250514",
-        "success": true,
-        "data": {
-          "gene_id": "PF3D7_1329700",
-          "RPD": {
-            "verification_status": "SUPPORTED",
-            "description": "apicoplast calcium binding protein ACBP1",
-            "evidence_code": "IDA",
-            "code_reason": "Direct experimental evidence including protein localization via immunofluorescence, Western blot analysis showing signal peptide processing, and functional assays demonstrating increased ionomycin resistance upon overexpression.",
-            "audit_status": "EDITED",
-            "audit_reason": "Original description was incorrect - paper shows calcium binding function, not acyl-CoA binding"
-          },
-          "APDs": [
-            {
-              "verification_status": "UNSUPPORTED",
-              "description": "acyl-CoA binding protein ACBP1",
-              "evidence_code": "",
-              "code_reason": "",
-              "audit_status": "",
-              "audit_reason": ""
-            },
-            {
-              "verification_status": "UNSUPPORTED",
-              "description": "acyl-CoA binding domain containing protein",
-              "evidence_code": "",
-              "code_reason": "",
-              "audit_status": "",
-              "audit_reason": ""
-            }
-          ]
-        },
-        "usage": {
-          "input": 132,
-          "output": 309,
-          "total": 441
-        },
-        "seconds": 6.002758400049061
-      }
-    }
-  },
-  "selectPD": {
-    "PF3D7_1329700": {
-      "gene_ID": "PF3D7_1329700",
-      "claude-sonnet-4-20250514": {
-        "model": "claude-sonnet-4-20250514",
-        "success": true,
-        "data": {
-          "gene_id": "MAL13P1.156",
-          "recommended_product": {
-            "description": "apicoplast calcium binding protein ACBP1",
-            "reasoning": "Matches the established naming convention (PfACBP1) and accurately reflects the protein's apicoplast localization and calcium binding function as demonstrated experimentally."
-          }
-        },
-        "usage": {
-          "input": 4462,
-          "output": 92,
-          "total": 4554
-        },
-        "seconds": 3.0550425000255927
+          "ShortSummary": "MAL13P1.156 (PfACBP1) is a 64 kDa apicoplast-targeted calcium binding protein containing an EF-hand domain that localizes to the apicoplast and whose overexpression confers 2-fold increased resistance to ionomycin, suggesting a crucial role in apicoplast calcium homeostasis and signaling."
+        }
       }
     }
   }

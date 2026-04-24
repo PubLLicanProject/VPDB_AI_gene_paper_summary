@@ -568,7 +568,7 @@ def main():
         "--gene_id",
         type=str,
         default="Tb927.10.4200",
-        help="Gene ID from VPDB to process (default: Tb927.10.4200)"
+        help="Gene locus tag to process (default: Tb927.10.4200)"
     )
     parser.add_argument(
         "--host_db",
@@ -628,3 +628,10 @@ if __name__ == "__main__":
     main()
 
 
+import sys
+
+# Set the command-line arguments
+sys.argv = ['STEP_1_single_pair_processing.py', '--host_db', 'PlasmoDB', '--pubmed_id', '25011111', '--gene_id', 'PF3D7_1355700']
+
+# Now call main()
+main()
