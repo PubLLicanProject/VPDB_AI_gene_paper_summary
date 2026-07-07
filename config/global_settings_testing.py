@@ -40,7 +40,7 @@ MODELS_TO_TEST = [
 
 
 # additional model to force correct JSON schema if original LLM fails; attempt this up to max_retry times
-formatter_llm = ["anthropic", "claude-sonnet-4-20250514"]
+formatter_llm = ["anthropic", "claude-sonnet-4-5"]
 max_retry = 5
 
 

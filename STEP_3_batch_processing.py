@@ -200,6 +200,13 @@ def save_result(pubmed_id: str, gene_id: str, data: dict, success: bool,
 def format_with_retry(content: str, schema: dict, max_attempts: int = MAX_RETRY) -> Optional[dict]:
     """Parse JSON with retry using formatter model."""
 
+    # 0. Never fabricate from nothing: an empty/whitespace response means the model returned no answer
+    #    (e.g. a safety-classifier refusal). Handing it to the formatter would invent a schema-shaped
+    #    placeholder, so fail honestly instead.
+    if not content or not content.strip():
+        print("  ! Empty response — treating as failure (not fabricating).")
+        return None
+
     # 1. Try direct parsing first using your utility
     data = extract_json(content)
     if isinstance(data, dict):
@@ -542,17 +549,6 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
             for gene_id, _host_db in gene_list
         ]
 
-        # Use per-step schema from global_prompts_and_schema (single source of truth)
-        step_key = "getGeneSummary"
-        summary_schema = global_prompts_and_schema[step_key]["ValidationSchema"]
-
-        # System prompt is constant across genes for this paper
-        system_prompt = get_prompt_and_replace(
-            stage_key=step_key,
-            replacements={"N_QUOTES": N_QUOTES, "JSON_SCHEMA": summary_schema},
-            prompt_type="SystemPrompt",
-        )
-
     results = []
 
     for i, (gene_id, host_db) in enumerate(gene_list, 1):
@@ -737,7 +733,7 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
             if save:
                 save_result(pubmed_id, gene_id, pd_result, True, "generatePDs", pd_usage, pd_time)
 
-            print(f"✓ PDs ({pd_time:.1f}s)", end=" | ")
+            print(f"✓ PDs ({(pd_time or 0):.1f}s)", end=" | ")
             print(f"Usage: {_format_openrouter_cache_info(pd_usage)}")
 
             # STEP 3: Verify PDs
@@ -768,7 +764,7 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
             if save:
                 save_result(pubmed_id, gene_id, verify_result, True, "verifyPDs", verify_usage, verify_time)
 
-            total_time = elapsed + pd_time + verify_time
+            total_time = (elapsed or 0) + (pd_time or 0) + (verify_time or 0)
             if PROVIDER == "anthropic":
                 cache_info = (
                     f"cache={verify_usage.get('cache_read_input_tokens', 0):,}"
@@ -776,7 +772,7 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                 )
                 print(f"✓ Verified ({verify_time:.1f}s) | Total: {total_time:.1f}s ({cache_info})")
             else:
-                print(f"✓ Verified ({verify_time:.1f}s) | Total: {total_time:.1f}s")
+                print(f"✓ Verified ({(verify_time or 0):.1f}s) | Total: {total_time:.1f}s")
                 if verify_usage:
                     print(f"Usage: {_format_openrouter_cache_info(verify_usage)}")
 
@@ -1028,7 +1024,7 @@ def process_batch_fallback(pairs: List[Tuple[str, str, str]], save: bool = True)
                 if save:
                     save_result(pubmed_id, gene_id, pd_result, True, "generatePDs", pd_usage, pd_time)
 
-                print(f"✓ PDs ({pd_time:.1f}s)", end=" | ")
+                print(f"✓ PDs ({(pd_time or 0):.1f}s)", end=" | ")
 
             except Exception as e:
                 print(f"✗ PD error: {e}")
@@ -1075,8 +1071,8 @@ def process_batch_fallback(pairs: List[Tuple[str, str, str]], save: bool = True)
                 if save:
                     save_result(pubmed_id, gene_id, verify_result, True, "verifyPDs", verify_usage, verify_time)
 
-                total_time = elapsed + pd_time + verify_time
-                print(f"✓ Verified ({verify_time:.1f}s) | Total: {total_time:.1f}s")
+                total_time = (elapsed or 0) + (pd_time or 0) + (verify_time or 0)
+                print(f"✓ Verified ({(verify_time or 0):.1f}s) | Total: {total_time:.1f}s")
 
             except Exception as e:
                 print(f"✗ verify PD error: {e}")
@@ -1810,9 +1806,9 @@ def process_from_csv(csv_path: str, save: bool = True) -> pd.DataFrame:
 
     return results_df
 
-csv_path = "curated_data/outstanding_to_process_2025_04.csv"
-process_from_csv(csv_path, save=True)
 
+# Entry point is main.py (run_batch -> process_from_csv). Importing this module must NOT
+# auto-run a batch, so the previous unguarded module-level call has been removed.
 # if __name__ == "__main__":
 #     import sys
 #

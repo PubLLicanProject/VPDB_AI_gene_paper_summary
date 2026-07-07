@@ -32,7 +32,7 @@ DEBUG_RAW_DIR = Path("./out/user_comment_evaluation/debug_raw_responses")
 OUTPUT_TSV = "./out/user_comment_evaluation/user_comment_eval_results.tsv"
 
 EVAL_PROVIDER = "openrouter"
-EVAL_MODEL = "openai/gpt-5.4"
+EVAL_MODEL = "anthropic/claude-sonnet-4.5"
 
 ONLY_SINGLE_PMID = True
 REQUIRE_PIPELINE_OUTPUTS = True
