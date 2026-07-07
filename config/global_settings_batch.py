@@ -33,10 +33,10 @@ OPENROUTER_JSON_PLUGINS = [{"id": "response-healing"}]
 OPENROUTER_CACHE_CFG = {"enabled": True, "ttl": "1h"}
 
 # update to openrouter naming
-SUMMARY_MODEL = "anthropic/claude-sonnet-4-5"    # for any fresh summary generation
-PD_GENERATOR_MODEL = "anthropic/claude-sonnet-4"
-PD_VERIFIER_MODEL = "anthropic/claude-sonnet-4"
-FORMATTER_MODEL = "anthropic/claude-sonnet-4"
+SUMMARY_MODEL = "anthropic/claude-sonnet-4.5"    # for any fresh summary generation
+PD_GENERATOR_MODEL = "anthropic/claude-sonnet-4.5"
+PD_VERIFIER_MODEL = "anthropic/claude-sonnet-4.5"
+FORMATTER_MODEL = "anthropic/claude-sonnet-4.5"
 
 
 # Processing Parameters
@@ -48,11 +48,11 @@ HTTP_TIMEOUT = 30
 N_PDs = 3  # Maximum number of PDs to generate
 
 # Output
-OUT_DIR = Path("./out/summaries")
+OUT_DIR = Path("./out/test2")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Processing Strategy
-MIN_GENES_FOR_CACHING = 3  # Use caching if paper has 3+ genes
+MIN_GENES_FOR_CACHING = 1  # TEST: route every paper through the OpenRouter caching path
 # USE_BATCH_FOR_LOW_DENSITY = True  # Use batch API for papers with <3 genes (falls back to standard if unavailable)
 USE_BATCH_FOR_LOW_DENSITY = True  # Anthropic Batch API not available via OpenRouter
 OVERWRITE_EXISTING = False  # Set to True to reprocess already-completed pairs

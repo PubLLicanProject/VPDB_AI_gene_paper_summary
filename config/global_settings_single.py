@@ -12,13 +12,13 @@ from dotenv import load_dotenv
 
 # models selected for each workflow stage
 # Testing Sonnet 4 as same price like Sonnet 3.7, our prev best performer
-summary_llm = ["anthropic", "claude-sonnet-4-20250514"]
-summary_QC_llm = ["anthropic", "claude-sonnet-4-20250514"]
-PD_generator_llm = ["anthropic", "claude-sonnet-4-20250514"]
-PD_picker_llm = ["anthropic", "claude-sonnet-4-20250514"]
-PD_QC_llm = ["anthropic", "claude-sonnet-4-20250514"]
+summary_llm = ["anthropic", "claude-sonnet-4-5"]
+summary_QC_llm = ["anthropic", "claude-sonnet-4-5"]
+PD_generator_llm = ["anthropic", "claude-sonnet-4-5"]
+PD_picker_llm = ["anthropic", "claude-sonnet-4-5"]
+PD_QC_llm = ["anthropic", "claude-sonnet-4-5"]
 # additional model to force correct JSON schema if original LLM fails; attempt this up to max_retry times
-formatter_llm = ["anthropic", "claude-sonnet-4-20250514"]
+formatter_llm = ["anthropic", "claude-sonnet-4-5"]
 max_retry = 3
 # claude-3-haiku-20240307 for slightly cheaper per retry attempt
 # however, sometimes fails completely - cost of reliability + speed is worth it for 3.5

@@ -412,7 +412,7 @@ def _responses_supports_temperature(model: str) -> bool:
     Return False for newer deterministic Responses models that reject `temperature`.
     Extend the prefixes as needed if you see similar errors with other models.
     """
-    no_temp_prefixes = ("gpt-5")  # add more if needed
+    no_temp_prefixes = ("gpt-5",)  # add more if needed
     return not any(model.startswith(p) for p in no_temp_prefixes)
 
 def _verified_to_select_candidates(verified: dict) -> dict:

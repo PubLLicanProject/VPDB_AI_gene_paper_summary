@@ -1,0 +1,206 @@
+pmid	gene_ID	genus	species
+32602891	NF0010730	Amoebozoa	N. fowleri
+32602891	ACA1_191530	Amoebozoa	A. castellanii
+32602891	NF0019060	Amoebozoa	N. fowleri
+32602891	NF0113850	Amoebozoa	N. fowleri
+32602891	NF0009920	Amoebozoa	N. fowleri
+32602891	ACA1_053960	Amoebozoa	A. castellanii
+32602891	NF0006040	Amoebozoa	N. fowleri
+32602891	NF0063980	Amoebozoa	N. fowleri
+32602891	ACA1_028650	Amoebozoa	A. castellanii
+32602891	NF0009070	Amoebozoa	N. fowleri
+32602891	ACA1_141980	Amoebozoa	A. castellanii
+32602891	ACA1_068800	Amoebozoa	A. castellanii
+32602891	ACA1_293850	Amoebozoa	A. castellanii
+32602891	ACA1_260000	Amoebozoa	A. castellanii
+32602891	NF0006140	Amoebozoa	N. fowleri
+32602891	ACA1_151280	Amoebozoa	A. castellanii
+32602891	NF0124690	Amoebozoa	N. fowleri
+32602891	NF0116880	Amoebozoa	N. fowleri
+32602891	ACA1_054130	Amoebozoa	A. castellanii
+32602891	ACA1_276870	Amoebozoa	A. castellanii
+32602891	ACA1_297780	Amoebozoa	A. castellanii
+32602891	ACA1_279800	Amoebozoa	A. castellanii
+32602891	NF0083570	Amoebozoa	N. fowleri
+32602891	NF0046290	Amoebozoa	N. fowleri
+32602891	ACA1_053870	Amoebozoa	A. castellanii
+32602891	ACA1_174700	Amoebozoa	A. castellanii
+27577684	CNC02960	Fungi	C. neoformans
+25644834	CNAG_03378	Fungi	C. neoformans
+25299517	MGG_04933	Fungi	P. oryzae
+25582336	Afu6g03430	Fungi	A. fumigatus
+25299517	MGG_17841	Fungi	P. oryzae
+26313153	CND04560	Fungi	C. neoformans
+27677328	CNAG_02511	Fungi	C. neoformans
+21124817	CNAG_06818	Fungi	C. neoformans
+18854164	CNAG_05105	Fungi	C. neoformans
+26529322	Afu7g02260	Fungi	A. fumigatus
+21124817	CND03600	Fungi	C. neoformans
+27048799	Afu3g07870	Fungi	A. fumigatus
+18854164	CNH01880	Fungi	C. neoformans
+27381444	NCU07523	Fungi	N. crassa
+23368997	Afu7g00170	Fungi	A. fumigatus
+31969561	Afu6g01970	Fungi	A. fumigatus
+21402362	CNAG_06346	Fungi	C. neoformans
+23488861	Afu8g00520	Fungi	A. fumigatus
+28420736	NCU04731	Fungi	N. crassa
+20345666	CNG03630	Fungi	C. neoformans
+27649508	Afu3g09670	Fungi	A. fumigatus
+18854164	CNAG_01551	Fungi	C. neoformans
+32398313	CNAG_02715	Fungi	C. neoformans
+25299517	MGG_06243	Fungi	P. oryzae
+25299517	MGG_09950	Fungi	P. oryzae
+18854164	CNI01980	Fungi	C. neoformans
+25299517	MGG_01624	Fungi	P. oryzae
+25299517	MGG_01887	Fungi	P. oryzae
+25299517	MGG_04674	Fungi	P. oryzae
+26242966	Afu4g14540	Fungi	A. fumigatus
+25763714	LmxM.04.0310	Leishmania	L. mexicana
+20838623	LmjF.31.1960	Leishmania	L. major
+20838623	LmxM.30.1960	Leishmania	L. mexicana
+29906288	LmxM.21.1580	Leishmania	L. mexicana
+26667778	LmxM.13.0430	Leishmania	L. mexicana
+19066473	LmjF.19.0840	Leishmania	L. major
+22396527	LmjF.28.1810	Leishmania	L. major
+19066473	LmjF.19.1630	Leishmania	L. major
+27606425	LbrM.31.2270	Leishmania	L. braziliensis
+22396527	LmjF.33.1730	Leishmania	L. major
+18039372	LmjF.25.0750	Leishmania	L. major
+25539953	LmjF.34.2700	Leishmania	L. major
+19074134	LmxM.27.1850	Leishmania	L. mexicana
+20601430	LmxM.36.6280	Leishmania	L. mexicana
+26746239	LmxM.33.2570	Leishmania	L. mexicana
+27812217	LdBPK_120730.1	Leishmania	L. donovani
+20145708	LmjF.07.0440	Leishmania	L. major
+20838623	LmjF.29.1150	Leishmania	L. major
+18364711	LmjF.31.2920	Leishmania	L. major
+20011126	LmjF.08.0200	Leishmania	L. major
+20180988	LbrM.12.0400	Leishmania	L. braziliensis
+20180988	LmjF.20.1365	Leishmania	L. major
+20180988	LbrM.11.0150	Leishmania	L. braziliensis
+20180988	LbrM.33.1360	Leishmania	L. braziliensis
+20180988	LbrM.21.1990	Leishmania	L. braziliensis
+20180988	LmjF.18.1420	Leishmania	L. major
+20614016	LmjF.18.0880	Leishmania	L. major
+20653091	LmjF.35.0130	Leishmania	L. major
+18364711	LmjF.32.3760	Leishmania	L. major
+20180988	LmjF.21.1680	Leishmania	L. major
+24637327	AN5126	Other	Aspergillus nidulans FGSC A4
+32117098	AN4022	Other	Aspergillus nidulans FGSC A4
+22329759	AN9257	Other	Aspergillus nidulans FGSC A4
+29212709	AN11189	Other	Aspergillus nidulans FGSC A4
+32117098	AN4694	Other	Aspergillus nidulans FGSC A4
+23617571	AN3496	Other	Aspergillus nidulans FGSC A4
+23617571	AN3495	Other	Aspergillus nidulans FGSC A4
+22329759	AN8381	Other	Aspergillus nidulans FGSC A4
+22329759	AN11206	Other	Aspergillus nidulans FGSC A4
+30410052	AN2701	Other	Aspergillus nidulans FGSC A4
+26353949	AN3522	Other	Aspergillus nidulans FGSC A4
+22329759	AN9246	Other	Aspergillus nidulans FGSC A4
+23762321	AN3621	Other	Aspergillus nidulans FGSC A4
+23339486	AN0494	Other	Aspergillus nidulans FGSC A4
+24751997	AN8737	Other	Aspergillus nidulans FGSC A4
+31795916	TcIL3000_10_5670	Other	Trypanosoma congolense IL3000
+22329759	AN11214	Other	Aspergillus nidulans FGSC A4
+31795916	TcIL3000_0_41350	Other	Trypanosoma congolense IL3000
+22329759	AN11205	Other	Aspergillus nidulans FGSC A4
+16091631	TcIL3000.11.10670	Other	Trypanosoma congolense IL3000
+31779253	AN8501	Other	Aspergillus nidulans FGSC A4
+29212709	AN11188	Other	Aspergillus nidulans FGSC A4
+31795916	TcIL3000_5_5210	Other	Trypanosoma congolense IL3000
+26811422	AN1156	Other	Aspergillus nidulans FGSC A4
+29212709	AN9177	Other	Aspergillus nidulans FGSC A4
+24118544	AN8677	Other	Aspergillus nidulans FGSC A4
+29212709	AN9178	Other	Aspergillus nidulans FGSC A4
+22329759	AN8384	Other	Aspergillus nidulans FGSC A4
+23339486	AN2828	Other	Aspergillus nidulans FGSC A4
+36898988	PKNH_1104200	Plasmodium	P. knowlesi
+24743167	PGAL8A_00175500	Plasmodium	P. gallinaceum
+16507167	PF3D7_0219700	Plasmodium	P. falciparum
+21245033	PocGH01_08010400	Plasmodium	P. ovale
+24086721	PRCDC_1331300	Plasmodium	P. reichenowi
+36898988	PVP01_0821100	Plasmodium	P. vivax
+24086721	PY17X_1410000	Plasmodium	P. yoelii
+22848665	PBANKA_1002600	Plasmodium	P. berghei
+23336032	PVP01_0525700	Plasmodium	P. vivax
+21245033	PKNH_0904600	Plasmodium	P. knowlesi
+29664138	PGAL8A_00061000	Plasmodium	P. gallinaceum
+24913268	PF3D7_0507100	Plasmodium	P. falciparum
+30888318	PRCDC_0105400	Plasmodium	P. reichenowi
+15230980	PRCDC_1422600	Plasmodium	P. reichenowi
+24391497	PBANKA_1036000	Plasmodium	P. berghei
+30050042	PBANKA_0416300	Plasmodium	P. berghei
+28676844	PRCDC_0815400	Plasmodium	P. reichenowi
+32144363	PF3D7_1442900	Plasmodium	P. falciparum
+21453511	PmUG01_12024300	Plasmodium	P. malariae
+16998185	PmUG01_12037300	Plasmodium	P. malariae
+24086721	PRCDC_0504300	Plasmodium	P. reichenowi
+23056326	PBANKA_1407300	Plasmodium	P. berghei
+29483266	PmUG01_10038100	Plasmodium	P. malariae
+25426852	PKNH_0404200	Plasmodium	P. knowlesi
+25426852	PRCDC_0215600	Plasmodium	P. reichenowi
+24086721	PY17X_1105800	Plasmodium	P. yoelii
+25011111	PRCDC_0515000	Plasmodium	P. reichenowi
+23056326	PVP01_1409800	Plasmodium	P. vivax
+35164549	PRCDC_0620600	Plasmodium	P. reichenowi
+26043001	PCHAS_1369500	Plasmodium	P. chabaudi
+35083211	TGME49_207590	Toxoplasma	T. gondii
+35083211	TGME49_270190	Toxoplasma	T. gondii
+36006241	TGME49_309380	Toxoplasma	T. gondii
+29156781	TGME49_268650	Toxoplasma	T. gondii
+38270431	TGME49_253360	Toxoplasma	T. gondii
+31040242	TGME49_239010	Toxoplasma	T. gondii
+31492901	TGME49_315160	Toxoplasma	T. gondii
+29244879	TGME49_262920	Toxoplasma	T. gondii
+36449552	TGME49_222910	Toxoplasma	T. gondii
+36245278	TGME49_292020	Toxoplasma	T. gondii
+27678060	TGME49_297970	Toxoplasma	T. gondii
+27594426	TGME49_265790	Toxoplasma	T. gondii
+26760042	TGME49_250840	Toxoplasma	T. gondii
+27486190	TGME49_290700	Toxoplasma	T. gondii
+35323018	TGME49_233200	Toxoplasma	T. gondii
+28529974	TGME49_297070	Toxoplasma	T. gondii
+27696623	TGME49_229640	Toxoplasma	T. gondii
+25691595	TGME49_258470	Toxoplasma	T. gondii
+32019789	TGME49_258870	Toxoplasma	T. gondii
+35941170	TGME49_229260	Toxoplasma	T. gondii
+27696623	TGME49_202930	Toxoplasma	T. gondii
+11706051	TGME49_255190	Toxoplasma	T. gondii
+35994509	TGME49_231840	Toxoplasma	T. gondii
+26840427	TGME49_289910	Toxoplasma	T. gondii
+36622147	TGME49_293360	Toxoplasma	T. gondii
+23742205	TGME49_281675	Toxoplasma	T. gondii
+37027006	TGME49_315950	Toxoplasma	T. gondii
+37966241	TGME49_290310	Toxoplasma	T. gondii
+31955846	TGME49_200385	Toxoplasma	T. gondii
+28205520	TGME49_215490	Toxoplasma	T. gondii
+21957477	Tb927.11.6410	Trypanosoma	T. brucei
+24257747	Tb927.10.14010	Trypanosoma	T. brucei
+29626111	Tb927.3.2050	Trypanosoma	T. brucei
+37606665	Tb927.3.2270	Trypanosoma	T. brucei
+24267450	Tb927.5.4070	Trypanosoma	T. brucei
+33168716	TcCLB.507941.10	Trypanosoma	T. cruzi
+19525551	Tb927.10.2900	Trypanosoma	T. brucei
+37531263	Tb927.5.2410	Trypanosoma	T. brucei
+36169304	Tb927.11.13820	Trypanosoma	T. brucei
+23451133	Tb927.7.1770	Trypanosoma	T. brucei
+33660774	Tb927.10.4440	Trypanosoma	T. brucei
+29287109	Tb927.7.1400	Trypanosoma	T. brucei
+35293314	Tb927.8.3070	Trypanosoma	T. brucei
+24582333	Tb927.8.1680	Trypanosoma	T. brucei
+37606665	Tb927.4.4110	Trypanosoma	T. brucei
+20444260	Tb927.7.4980	Trypanosoma	T. brucei
+23437089	Tb927.10.13780	Trypanosoma	T. brucei
+14670085	Tb927.10.2220	Trypanosoma	T. brucei
+19386623	Tb927.11.9430	Trypanosoma	T. brucei
+23525104	Tb927.10.2750	Trypanosoma	T. brucei
+20153321	Tb927.8.2000	Trypanosoma	T. brucei
+31795916	TcCLB.510055.70	Trypanosoma	T. cruzi
+16164760	TcCLB.511753.70	Trypanosoma	T. cruzi
+20444260	Tb927.7.930	Trypanosoma	T. brucei
+24453978	Tb927.4.5310	Trypanosoma	T. brucei
+34407985	Tb927.4.2440	Trypanosoma	T. brucei
+23666624	Tb927.2.3880	Trypanosoma	T. brucei
+20382188	Tb927.6.1820	Trypanosoma	T. brucei
+29244877	Tb927.9.8540	Trypanosoma	T. brucei
+33168716	TcCLB.510529.10	Trypanosoma	T. cruzi

@@ -35,13 +35,13 @@ JSON_SCHEMA = "" # schema as string to append to the system prompt; stored in th
 
 # model choice for each pipeline step
 max_tokens = 20000  # default in Claude tester online, NB: needs lowering for openai models
-summary_llm = ["anthropic", "claude-sonnet-4-20250514"]
-summary_QC_llm = ["anthropic", "claude-sonnet-4-20250514"]
-PD_generator_llm = ["anthropic", "claude-sonnet-4-20250514"]
-PD_picker_llm = ["anthropic", "claude-sonnet-4-20250514"]
-PD_QC_llm = ["anthropic", "claude-sonnet-4-20250514"]
+summary_llm = ["anthropic", "claude-sonnet-4-5"]
+summary_QC_llm = ["anthropic", "claude-sonnet-4-5"]
+PD_generator_llm = ["anthropic", "claude-sonnet-4-5"]
+PD_picker_llm = ["anthropic", "claude-sonnet-4-5"]
+PD_QC_llm = ["anthropic", "claude-sonnet-4-5"]
 # additional model to force correct JSON schema if original LLM fails; attempt this up to max_retry times
-formatter_llm = ["anthropic", "claude-sonnet-4-20250514"]
+formatter_llm = ["anthropic", "claude-sonnet-4-5"]
 max_retry = 3
 
 
@@ -1506,6 +1506,28 @@ def _is_openai_responses_model(model: str) -> bool:
     prefixes = ("gpt-5", "o4", "gpt-4.1", "gpt-4o-")
     return any(model.startswith(p) for p in prefixes)
 
+
+def _omit_sampling_params(model: str) -> bool:
+    """
+    Return True when `model` rejects non-default sampling params (temperature/top_p/top_k).
+    Applies to Claude Sonnet 5 / Opus 5 / Fable 5 / any '-5' Claude, and Opus 4.6/4.7/4.8 —
+    these default 'thinking' on and 400 on an explicit temperature. Matches native ids and
+    OpenRouter slugs (e.g. 'anthropic/claude-sonnet-5').
+    """
+    m = (model or "").lower()
+    if any(t in m for t in ("sonnet-5", "opus-5", "fable-5", "haiku-5")):
+        return True
+    if any(t in m for t in ("opus-4-6", "opus-4-7", "opus-4-8",
+                             "opus-4.6", "opus-4.7", "opus-4.8")):
+        return True
+    return False
+
+
+def _is_anthropic_model(model: str) -> bool:
+    """True for Anthropic/Claude models (native ids or OpenRouter 'anthropic/...' slugs)."""
+    m = (model or "").lower()
+    return m.startswith("anthropic/") or "claude" in m
+
 def _ensure_list(user_prompts: UserPrompts) -> List[str]:
     if user_prompts is None:
         return []
@@ -1662,8 +1684,9 @@ def call_prompt(
             "model": model,
             "messages": messages,
             "max_tokens": local_max_tokens,
-            "temperature": model_temp,
         }
+        if not _omit_sampling_params(model):
+            request_params["temperature"] = model_temp
         if system_prompt:
             request_params["system"] = system_prompt
 
@@ -1707,29 +1730,33 @@ def call_prompt(
             for p in prompts:
                 openai_messages.append({"role": "user", "content": p})
 
-        # ✅ Assistant prefill ONLY when NOT using response_format.
-        # If using response_format json_schema/json_object, do NOT prefill; let constrained decoding do the work.
-        used_prefill = bool(prefill_text) and response_format is None
-        if used_prefill:
-            openai_messages.append({"role": "assistant", "content": prefill_text})
-
         client = OpenAIClient(
             base_url="https://openrouter.ai/api/v1",
             api_key=OPENROUTER_API_KEY,
             default_headers={
-                "HTTP-Referer": "https://github.com/yourusername",
+                "HTTP-Referer": "https://github.com/PubLLicanProject/VPDB_AI_gene_paper_summary",
                 "X-Title": "Gene Curation Pipeline",
             },
         )
 
 
-        # ✅ Structured outputs (best fix for “formatter needed”)
-        # Only enforce structured outputs if model supports it
+        # ✅ Structured outputs. Anthropic/Claude structured-output schema support is too limited
+        # for the pipeline schemas (e.g. verifyPDs' "APDs" property 400s), so disable it for Claude
+        # and fall back to the JSON system-prompt + response-healing + format_with_retry path.
         wants_structured = response_format is not None
-        can_structured = openrouter_supports_structured_outputs(model)
-        use_structured = wants_structured and can_structured
+        use_structured = (
+            wants_structured
+            and not _is_anthropic_model(model)
+            and openrouter_supports_structured_outputs(model)
+        )
 
-        used_prefill = bool(prefill_text) and not use_structured
+        # ✅ Assistant prefill: never for Anthropic/Claude models. Newer ones (Sonnet 5 / Opus 4.6+)
+        # reject it with a 400; and on older ones (Sonnet 4.5/4) a forced "{" prefill is both
+        # unnecessary (the model emits JSON from the prompt, which extract_json handles) and harmful:
+        # a forced assistant turn is a jailbreak-associated pattern, so Claude's safety classifier
+        # false-positives (finish_reason "content_filter", empty output) on borderline parasite-
+        # genetics prompts that pass fine without it. Keep prefill only for non-Anthropic models.
+        used_prefill = bool(prefill_text) and not use_structured and not _is_anthropic_model(model)
         if used_prefill:
             openai_messages.append({"role": "assistant", "content": prefill_text})
 
@@ -1737,9 +1764,12 @@ def call_prompt(
             "model": model,
             "messages": openai_messages,
             "max_tokens": local_max_tokens,
-            "temperature": model_temp,
             "timeout": HTTP_TIMEOUT,
         }
+        # Sonnet 5 / *-5 / Opus 4.6+ reject non-default sampling params; only send temperature
+        # when the model accepts it (see _omit_sampling_params).
+        if not _omit_sampling_params(model):
+            request_params["temperature"] = model_temp
         if use_structured:
             request_params["response_format"] = response_format
 
@@ -1761,6 +1791,12 @@ def call_prompt(
         elapsed = time.perf_counter() - start
 
         result = response.choices[0].message.content or ""
+        # Surface (don't hide) a safety-classifier refusal: OpenRouter returns HTTP 200 with an empty
+        # choice and finish_reason "content_filter". Empty content is passed through so callers /
+        # format_with_retry treat it as a failure instead of fabricating a schema-shaped placeholder.
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        if not result.strip():
+            print(f"⚠️ Empty LLM response (finish_reason={finish_reason}) from {model}")
 
         # If we used assistant prefill, the returned text is the completion AFTER the prefill.
         # So we must reconstruct the full JSON string.
