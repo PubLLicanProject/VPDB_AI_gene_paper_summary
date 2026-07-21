@@ -46,7 +46,7 @@ def get_vpdb_alias(gene_id: str, host_db: str) -> List[str]:
     url = f"https://{host_db_lc}.org/{path_prefix}/service/record-types/gene/records"
 
     data = {
-        "attributes": [],
+        "attributes": ["name"],
         "primaryKey": [
             {"name": "source_id", "value": gene_id},
             {"name": "project_id", "value": project},
@@ -64,6 +64,12 @@ def get_vpdb_alias(gene_id: str, host_db: str) -> List[str]:
         return []
 
     alias_set = set()
+
+    # Primary gene name/symbol (not part of the Alias table)
+    gene_name = (payload.get("attributes", {}) or {}).get("name")
+    if gene_name and gene_name != gene_id:
+        alias_set.add(gene_name)
+
     for row in (payload.get("tables", {}).get("Alias", []) or []):
         val = row.get("alias")
         if val and val != gene_id:
@@ -71,6 +77,7 @@ def get_vpdb_alias(gene_id: str, host_db: str) -> List[str]:
 
     return sorted(alias_set)
 
+get_vpdb_alias("AGAP001212", "vectorbase")
 
 def _count_substrings(paper: str, alias: str) -> int:
     """Count occurrences of alias in paper with flexible matching."""
