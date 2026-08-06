@@ -1,0 +1,19 @@
+# Root pipeline dependencies (previously undocumented — see CLAUDE.md).
+# Install into a venv:  python -m pip install -r requirements.txt
+
+# Core LLM clients + data
+anthropic
+openai
+requests
+python-dotenv
+pandas
+
+# Paper text + supplementary-materials parsing
+lxml
+beautifulsoup4
+charset-normalizer
+pdfplumber>=0.11      # supplementary PDFs (text + tables)
+openpyxl>=3.1         # .xlsx supplementary spreadsheets
+python-docx>=1.1      # .docx supplementary files
+xlrd>=2.0             # legacy .xls supplementary spreadsheets
+olefile>=0.46         # legacy .doc supplementary files (OLE text extraction)

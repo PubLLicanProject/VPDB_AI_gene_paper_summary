@@ -7,6 +7,7 @@ from collections import defaultdict
 from config.global_settings_batch import *
 from pipeline.prompts import *
 from pipeline.pubmed_helpers import *
+from pipeline.supplementary_helpers import get_supplementary_text, count_supplementary_mentions
 from pipeline.vpdb_helpers import *
 from pipeline.utils import *
 from pipeline.prompts import (_ensure_list, )
@@ -534,15 +535,32 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
     try:
         print("Fetching paper text...")
         paper_text = get_paper_text(pubmed_id)
-    except Exception as e:
-        print(f"  ✗ Paper not available in PMC: {e}")
+    except PaperNotInOA as e:
+        # permanent: genuinely not in the OA subset
+        print(f"  ✗ Paper not in PMC OA subset: {e}")
         return [
             {
                 "pubmed_id": pubmed_id,
                 "gene_id": gene_id,
                 "success": False,
-                "error": "Paper not available in PMC",
+                "error": f"Paper not available in PMC OA subset: {e}",
                 "paper_available": False,
+                "alias_in_text": False,
+                "mentions": 0,
+            }
+            for gene_id, _host_db in gene_list
+        ]
+    except Exception as e:
+        # transient fetch failure (timeout/5xx/429) that survived retries -> retryable on re-run.
+        # paper_available left as None (unknown) to avoid mislabelling an available paper.
+        print(f"  ✗ Paper fetch failed (transient/retryable): {e}")
+        return [
+            {
+                "pubmed_id": pubmed_id,
+                "gene_id": gene_id,
+                "success": False,
+                "error": f"Paper fetch error (transient/retryable): {e}",
+                "paper_available": None,
                 "alias_in_text": False,
                 "mentions": 0,
             }
@@ -555,20 +573,34 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
         print(f"  [{i}/{len(gene_list)}] {gene_id}...", end=" ")
 
         alias_in_text, mentions = check_gene_in_text(gene_id, paper_text, host_db)
+        aliases = None  # computed lazily below (early only if the supplement gate needs it)
+        gene_source = "main_text"
         if not alias_in_text:
-            print("✗ Gene/aliases not found in text (skipped)")
-            results.append({
-                "pubmed_id": pubmed_id,
-                "gene_id": gene_id,
-                "success": False,
-                "error": "Gene/aliases not found in paper text",
-                "paper_available": True,
-                "alias_in_text": False,
-                "mentions": 0,
-            })
-            continue
-
-        print(f"({mentions} mentions) ", end="")
+            suppl_hit = 0
+            if FETCH_SUPPLEMENTARY:
+                aliases = get_gene_synonyms(gene_id, paper_text, host_db)
+                _sm = count_supplementary_mentions(pubmed_id, gene_id, aliases, host_db,
+                                                   caps=(SUPPLEMENTARY_CAPS or None))
+                suppl_hit = _sm.get("mentions", 0)
+            if suppl_hit > 0:
+                # gene absent from the main text but present in the supplement -> unlock it
+                gene_source = "supplement_only"
+                mentions = suppl_hit
+                print(f"(supplement x{suppl_hit}) ", end="")
+            else:
+                print("✗ Gene/aliases not found in text or supplement (skipped)")
+                results.append({
+                    "pubmed_id": pubmed_id,
+                    "gene_id": gene_id,
+                    "success": False,
+                    "error": "Gene/aliases not found in paper text or supplement",
+                    "paper_available": True,
+                    "alias_in_text": False,
+                    "mentions": 0,
+                })
+                continue
+        else:
+            print(f"({mentions} mentions) ", end="")
 
         if not OVERWRITE_EXISTING and is_gene_already_processed(pubmed_id, gene_id):
             print("✓ Already processed (skipped)")
@@ -587,7 +619,8 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
 
 
         try:
-            aliases = get_gene_synonyms(gene_id, paper_text, host_db)
+            if aliases is None:
+                aliases = get_gene_synonyms(gene_id, paper_text, host_db)
             gene_display = f"{gene_id}, also known as {', '.join(aliases)}" if aliases else gene_id
 
             raw = None
@@ -612,6 +645,17 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                     replacements={"N_QUOTES": N_QUOTES, "JSON_SCHEMA": JSON_SCHEMA},
                     prompt_type="SystemPrompt",
                 )
+
+                # Optionally augment with gene-filtered supplementary materials.
+                # Appended to the gene-specific prompt (last message) so prompt[0]
+                # (the paper text) stays identical across genes and remains cacheable.
+                if FETCH_SUPPLEMENTARY:
+                    _suppl = get_supplementary_text(pubmed_id, gene_id, aliases, host_db,
+                                                    caps=(SUPPLEMENTARY_CAPS or None))
+                    if _suppl:
+                        user_prompts = list(user_prompts)
+                        user_prompts[-1] = f"{user_prompts[-1]}\n\n{_suppl}"
+                        print("📎+suppl", end=" ")
 
                 if PROVIDER == "anthropic":
                     start = time.time()
@@ -915,6 +959,15 @@ def process_batch_fallback(pairs: List[Tuple[str, str, str]], save: bool = True)
                     {"PAPER_TEXT": paper_text, "GENE": gene_display},
                     "UserPrompts",
                 )
+                # Optionally augment with gene-filtered supplementary materials
+                # (appended to the gene-specific prompt to keep prompt[0] cacheable).
+                if FETCH_SUPPLEMENTARY:
+                    _suppl = get_supplementary_text(pubmed_id, gene_id, aliases, host_db,
+                                                    caps=(SUPPLEMENTARY_CAPS or None))
+                    if _suppl:
+                        user_prompts = list(user_prompts)
+                        user_prompts[-1] = f"{user_prompts[-1]}\n\n{_suppl}"
+                        print("📎+suppl", end=" ")
                 # Call API
                 if PROVIDER == "anthropic":
                     start = time.time()

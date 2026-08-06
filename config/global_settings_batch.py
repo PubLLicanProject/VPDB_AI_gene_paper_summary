@@ -48,7 +48,7 @@ HTTP_TIMEOUT = 30
 N_PDs = 3  # Maximum number of PDs to generate
 
 # Output
-OUT_DIR = Path("./out/test2")
+OUT_DIR = Path("./out/VPDB_PD_set_expansion/cache")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Processing Strategy
@@ -57,11 +57,19 @@ MIN_GENES_FOR_CACHING = 1  # TEST: route every paper through the OpenRouter cach
 USE_BATCH_FOR_LOW_DENSITY = True  # Anthropic Batch API not available via OpenRouter
 OVERWRITE_EXISTING = False  # Set to True to reprocess already-completed pairs
 
+# --- Supplementary materials (opt-in) ---------------------------------------
+# When True, fetch + gene-filter an OA paper's supplementary files (PDF / tables /
+# spreadsheets) via pipeline.supplementary_helpers and append the gene-relevant block
+# to the summary input. Off by default. NOTE: summaries already cached without
+# supplements are reused as-is unless OVERWRITE_EXISTING=True.
+FETCH_SUPPLEMENTARY = False
+SUPPLEMENTARY_CAPS = {}  # optional overrides for supplementary_helpers.DEFAULT_CAPS
+
 # CSV Column Mapping (adjust these if your CSV has different column names)
 CSV_COLUMNS = {
-    'gene_id': 'gene_ID',        # Column containing gene IDs (e.g., "PF3D7_1234")
-    'pmid': 'pmid',        # Column containing PubMed IDs (e.g., "12345678")
-    'database': 'host_db',       # Column containing database names (e.g., "plasmodb", "toxodb")
+    'gene_id': 'Gene ID',        # Column containing gene IDs (e.g., "PF3D7_1234")
+    'pmid': 'pmid_CLEAN',        # Column containing PubMed IDs (e.g., "12345678")
+    'database': 'Database',       # Column containing database names (e.g., "plasmodb", "toxodb")
     # Optional columns for filtering (will be used if present):
     'paper_available': 'paper_available',  # Boolean: whether paper is available in PMC
     'alias_in_text': 'alias_in_text'       # Boolean: whether gene alias found in paper
