@@ -198,7 +198,7 @@ def save_result(pubmed_id: str, gene_id: str, data: dict, success: bool,
     with open(filename, 'w') as f:
         json.dump(paper_data, f, indent=2)
 
-def format_with_retry(content: str, schema: dict, max_attempts: int = MAX_RETRY) -> Optional[dict]:
+def format_with_retry(content: str, schema: dict, max_attempts: int = MAX_RETRY, label: str = "") -> Optional[dict]:
     """Parse JSON with retry using formatter model."""
 
     # 0. Never fabricate from nothing: an empty/whitespace response means the model returned no answer
@@ -258,7 +258,8 @@ def format_with_retry(content: str, schema: dict, max_attempts: int = MAX_RETRY)
             print(f"  Retry {attempt + 1} failed: {e}")
             if attempt == max_attempts - 1:
                 # Debug logging remains the same
-                debug_file = OUT_DIR / f"debug_failed_parse_{int(time.time())}.txt"
+                _safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in str(label))[:80]
+                debug_file = OUT_DIR / f"debug_failed_parse_{_safe or 'unknown'}_{int(time.time())}.txt"
                 with open(debug_file, 'w') as f:
                     f.write(f"Original content:\n{content}\n\nSchema:\n{json.dumps(schema, indent=2)}")
                 print(f"  Raw response saved to: {debug_file}")
@@ -707,7 +708,7 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                         f"Use 'anthropic' or 'openrouter'."
                     )
 
-                result = format_with_retry(raw, VALIDATION_SCHEMA)
+                result = format_with_retry(raw, VALIDATION_SCHEMA, label=f"{pubmed_id}_{gene_id}")
 
                 if not result:
                     print("✗ Failed to parse response - saving raw output for debugging")
