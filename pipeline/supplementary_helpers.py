@@ -32,6 +32,7 @@ import csv
 import time
 import random
 import zipfile
+import threading
 import requests
 from collections import OrderedDict
 from typing import List, Dict, Optional
@@ -73,14 +74,17 @@ DEFAULT_CAPS = {
 # (a paper with N genes otherwise re-fetches the same zip N times).
 _ZIP_CACHE = OrderedDict()      # pmcid -> zip bytes | None
 _CAPTION_CACHE = OrderedDict()  # pmcid -> {filename: caption}
-_CACHE_MAX = 3
+_PARSED_CACHE = OrderedDict()   # pmcid -> {"files":[(name,parsed)], "image_count", "other_files"} | None
+_CACHE_MAX = 24                 # >= worker count so concurrent papers don't evict each other
+_cache_lock = threading.Lock()  # guards the OrderedDicts under paper-level threading
 
 
 def _cache_put(cache, key, value):
-    cache[key] = value
-    cache.move_to_end(key)
-    while len(cache) > _CACHE_MAX:
-        cache.popitem(last=False)
+    with _cache_lock:
+        cache[key] = value
+        cache.move_to_end(key)
+        while len(cache) > _CACHE_MAX:
+            cache.popitem(last=False)
     return value
 
 
@@ -210,10 +214,12 @@ def fetch_supplementary_zip(pmcid, *, caps) -> Optional[zipfile.ZipFile]:
     """Fetch the Europe PMC supplementaryFiles ZIP into memory (size-capped stream, cached by
     pmcid). None if absent / too big / not a zip. A fresh ZipFile is returned each call (over the
     cached bytes) since a ZipFile stream is single-use."""
-    if pmcid in _ZIP_CACHE:
-        _ZIP_CACHE.move_to_end(pmcid)
-        content = _ZIP_CACHE[pmcid]
-    else:
+    with _cache_lock:
+        hit = pmcid in _ZIP_CACHE
+        if hit:
+            _ZIP_CACHE.move_to_end(pmcid)
+            content = _ZIP_CACHE[pmcid]
+    if not hit:
         content = _download_capped(f"{EPMC_BASE}/{pmcid}/supplementaryFiles", caps["max_zip_bytes"])
         _cache_put(_ZIP_CACHE, pmcid, content)
     if not content or content[:2] != b"PK":
@@ -226,9 +232,10 @@ def fetch_supplementary_zip(pmcid, *, caps) -> Optional[zipfile.ZipFile]:
 
 def fetch_supplementary_captions(pmcid) -> Dict[str, str]:
     """Map supplementary filename -> 'label: caption' parsed from the JATS fullTextXML (cached)."""
-    if pmcid in _CAPTION_CACHE:
-        _CAPTION_CACHE.move_to_end(pmcid)
-        return _CAPTION_CACHE[pmcid]
+    with _cache_lock:
+        if pmcid in _CAPTION_CACHE:
+            _CAPTION_CACHE.move_to_end(pmcid)
+            return _CAPTION_CACHE[pmcid]
     out: Dict[str, str] = {}
     try:
         resp = _http_get(f"{EPMC_BASE}/{pmcid}/fullTextXML")
@@ -557,6 +564,34 @@ def _walk_zip(zf, caps, state, depth, handle_file):
     return False
 
 
+def _parsed_files(pmcid, caps):
+    """Parse a paper's supplement ONCE and cache the result by pmcid, so a paper with N genes
+    parses its (possibly large) files once instead of N times. Returns
+    {"files":[(name,parsed)], "image_count", "other_files"} or None if there is no supplement."""
+    with _cache_lock:
+        if pmcid in _PARSED_CACHE:
+            _PARSED_CACHE.move_to_end(pmcid)
+            return _PARSED_CACHE[pmcid]
+    zf = fetch_supplementary_zip(pmcid, caps=caps)
+    if zf is None:
+        _cache_put(_PARSED_CACHE, pmcid, None)
+        return None
+    files = []
+    state = _new_state()
+
+    def _grab(name, parsed, st):
+        files.append((name, parsed))
+        return False
+
+    try:
+        _walk_zip(zf, caps, state, 0, _grab)
+    except Exception:
+        pass
+    result = {"files": files, "image_count": state["image_count"], "other_files": state["other_files"]}
+    _cache_put(_PARSED_CACHE, pmcid, result)
+    return result
+
+
 def get_supplementary_text(pmid, gene_id, aliases=None, host_db=None, *, caps=None) -> str:
     """
     Return a bounded, gene-filtered supplementary-materials text block for (pmid, gene_id),
@@ -568,48 +603,43 @@ def get_supplementary_text(pmid, gene_id, aliases=None, host_db=None, *, caps=No
         pmcid = _normalize_pmcid(pmid)
         if not pmcid:
             return ""
-        zf = fetch_supplementary_zip(pmcid, caps=caps)
-        if zf is None:
+        pf = _parsed_files(pmcid, caps)   # parsed once per paper, cached
+        if pf is None:
             return ""
 
         captions = fetch_supplementary_captions(pmcid)  # best-effort enrichment
         gene_re = _build_gene_regex(gene_id, aliases)
 
-        state = _new_state()
-        state["blocks"], state["total_chars"] = [], 0
-
-        def _collect(name, parsed, st):
+        blocks, total, truncated = [], 0, False
+        for name, parsed in pf["files"]:
             block = _assemble_file_block(name, parsed, captions, gene_re, caps)
             if not block:
-                return False
-            if st["total_chars"] + len(block) > caps["total_char_budget"]:
-                st["truncated"] = True
-                return True
-            st["blocks"].append(block)
-            st["total_chars"] += len(block)
-            return False
+                continue
+            if total + len(block) > caps["total_char_budget"]:
+                truncated = True
+                break
+            blocks.append(block)
+            total += len(block)
 
-        _walk_zip(zf, caps, state, 0, _collect)
-
-        if not state["blocks"]:
+        if not blocks:
             return ""  # only images / unparseable files — nothing text-extractable
 
         extras = []
-        if state["image_count"]:
-            extras.append(f"[{state['image_count']} figure/image file(s) present — image extraction deferred]")
-        if state["other_files"]:
-            shown = ", ".join(state["other_files"][:8])
-            more = f" (+{len(state['other_files']) - 8} more)" if len(state["other_files"]) > 8 else ""
-            extras.append(f"[{len(state['other_files'])} non-text file(s) not parsed: {shown}{more}]")
+        if pf["image_count"]:
+            extras.append(f"[{pf['image_count']} figure/image file(s) present — image extraction deferred]")
+        if pf["other_files"]:
+            shown = ", ".join(pf["other_files"][:8])
+            more = f" (+{len(pf['other_files']) - 8} more)" if len(pf["other_files"]) > 8 else ""
+            extras.append(f"[{len(pf['other_files'])} non-text file(s) not parsed: {shown}{more}]")
         if extras:
-            state["blocks"].append("\n".join(extras))
+            blocks.append("\n".join(extras))
 
         head = f"=== SUPPLEMENTARY MATERIALS (gene {gene_id}"
         if aliases:
             head += " / " + ", ".join(aliases[:5])
         head += f"; PMCID {pmcid}) ==="
-        tail = "\n[supplementary truncated: character budget reached]" if state["truncated"] else ""
-        return head + "\n" + "\n\n".join(state["blocks"]) + tail + "\n=== END SUPPLEMENTARY MATERIALS ===\n"
+        tail = "\n[supplementary truncated: character budget reached]" if truncated else ""
+        return head + "\n" + "\n\n".join(blocks) + tail + "\n=== END SUPPLEMENTARY MATERIALS ===\n"
     except Exception:
         return ""
 
@@ -630,30 +660,24 @@ def count_supplementary_mentions(pmid, gene_id, aliases=None, host_db=None, *, c
         out["pmcid"] = pmcid
         if not pmcid:
             return out
-        zf = fetch_supplementary_zip(pmcid, caps=caps)
-        if zf is None:
+        pf = _parsed_files(pmcid, caps)   # parsed once per paper, cached
+        if pf is None:
             return out
         out["available"] = True
         gene_re = _build_gene_regex(gene_id, aliases)
         if gene_re is None:
             return out
 
-        state = _new_state()
-        state["mentions"], state["files"] = 0, []
-
-        def _count(name, parsed, st):
-            n = 0
-            for rec in list(parsed.get("always", [])) + list(parsed.get("candidates", [])):
-                n += len(gene_re.findall(rec))
+        mentions, files = 0, []
+        for name, parsed in pf["files"]:
+            blob = "\n".join(list(parsed.get("always", [])) + list(parsed.get("candidates", [])))
+            n = len(gene_re.findall(blob)) if blob else 0
             if n:
-                st["mentions"] += n
-                st["files"].append((name, n))
-            return False
-
-        _walk_zip(zf, caps, state, 0, _count)
-        out["mentions"] = state["mentions"]
-        out["files"] = state["files"]
-        out["found"] = state["mentions"] > 0
+                mentions += n
+                files.append((name, n))
+        out["mentions"] = mentions
+        out["files"] = files
+        out["found"] = mentions > 0
         return out
     except Exception:
         return out
