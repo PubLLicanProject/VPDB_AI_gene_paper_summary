@@ -56,9 +56,10 @@ NCBI_API_KEY = os.getenv("NCBI_API_KEY", "")
 XLINK = "{http://www.w3.org/1999/xlink}href"
 IMAGE_EXTS = {".gif", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".svg", ".eps"}
 
-# Figure/table LEGENDS (from fullTextXML) are free and recover ~4-5% of otherwise-missed genes -> on.
-# IMAGE OCR (tables saved as images) adds ~1% but needs a Tesseract binary + CPU -> opt-in via env/flag.
-INCLUDE_LEGENDS = True
+# Figure/table LEGENDS (fullTextXML) + image OCR (tables saved as pictures). At scale these unlock only
+# ~0.9% of otherwise-missed genes (44 OCR + 12 legend of 6433), so both are OFF by default -- not worth
+# spending LLM summaries/PDs on -- but remain available as opt-in flags (env or set at runtime).
+INCLUDE_LEGENDS = os.getenv("SUPPL_LEGENDS", "").lower() in ("1", "true", "yes")
 OCR_IMAGES = os.getenv("OCR_IMAGES", "").lower() in ("1", "true", "yes")
 OCR_MIN_DIM = 300
 OCR_MAX_PIXELS = 60_000_000
