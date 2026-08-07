@@ -17,3 +17,4 @@ openpyxl>=3.1         # .xlsx supplementary spreadsheets
 python-docx>=1.1      # .docx supplementary files
 xlrd>=2.0             # legacy .xls supplementary spreadsheets
 olefile>=0.46         # legacy .doc supplementary files (OLE text extraction)
+pytesseract>=0.3.10   # OCR of table/figure images (opt-in OCR_IMAGES); needs a Tesseract binary on the host
