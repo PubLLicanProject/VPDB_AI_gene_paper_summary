@@ -56,6 +56,15 @@ NCBI_API_KEY = os.getenv("NCBI_API_KEY", "")
 XLINK = "{http://www.w3.org/1999/xlink}href"
 IMAGE_EXTS = {".gif", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".svg", ".eps"}
 
+# Figure/table LEGENDS (from fullTextXML) are free and recover ~4-5% of otherwise-missed genes -> on.
+# IMAGE OCR (tables saved as images) adds ~1% but needs a Tesseract binary + CPU -> opt-in via env/flag.
+INCLUDE_LEGENDS = True
+OCR_IMAGES = os.getenv("OCR_IMAGES", "").lower() in ("1", "true", "yes")
+OCR_MIN_DIM = 300
+OCR_MAX_PIXELS = 60_000_000
+_LEGEND_CACHE = OrderedDict()
+_tess_cmd = [None, False]  # [resolved path, attempted?]
+
 # --- Default size caps (override via the `caps` argument / config) -----------
 DEFAULT_CAPS = {
     "max_zip_bytes": 60 * 1024 * 1024,        # compressed-download ceiling (streamed, enforced live)
@@ -431,6 +440,62 @@ def _parse_doc(data, caps):
     return {"kind": "text", "always": [], "candidates": candidates}
 
 
+def _ensure_tesseract():
+    if _tess_cmd[1]:
+        return _tess_cmd[0]
+    _tess_cmd[1] = True
+    try:
+        import pytesseract
+        import shutil
+        for c in (shutil.which('tesseract'), r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+                  os.path.expanduser(r'~\Tesseract-OCR\tesseract.exe')):
+            if c and os.path.exists(c):
+                pytesseract.pytesseract.tesseract_cmd = c
+                _tess_cmd[0] = c
+                break
+        pytesseract.get_tesseract_version()
+    except Exception:
+        _tess_cmd[0] = None
+    return _tess_cmd[0]
+
+
+def _ocr_image(data):
+    """OCR an image to text; '' on failure / no Tesseract / out-of-bounds size."""
+    try:
+        import pytesseract
+        from PIL import Image
+        if not _ensure_tesseract():
+            return ""
+        img = Image.open(io.BytesIO(data))
+        w, h = img.size
+        if min(w, h) < OCR_MIN_DIM or w * h > OCR_MAX_PIXELS:
+            return ""
+        return pytesseract.image_to_string(img, timeout=20)
+    except Exception:
+        return ""
+
+
+def _legend_records(pmcid):
+    """Figure/table legend + caption text from the JATS fullTextXML, as searchable records (cached)."""
+    with _cache_lock:
+        if pmcid in _LEGEND_CACHE:
+            _LEGEND_CACHE.move_to_end(pmcid)
+            return _LEGEND_CACHE[pmcid]
+    recs = []
+    try:
+        resp = _http_get(f"{EPMC_BASE}/{pmcid}/fullTextXML")
+        from lxml import etree
+        root = etree.fromstring(resp.content)
+        for el in root.iter():
+            if isinstance(el.tag, str) and etree.QName(el).localname in ("caption", "label", "title"):
+                t = " ".join("".join(el.itertext()).split())
+                if t:
+                    recs.append(t)
+    except Exception:
+        recs = []
+    return _cache_put(_LEGEND_CACHE, pmcid, recs)
+
+
 def _parse_entry(name, data, caps):
     ext = os.path.splitext(name)[1].lower()
     try:
@@ -449,6 +514,11 @@ def _parse_entry(name, data, caps):
         if ext in (".xml", ".html", ".htm"):
             return _parse_markup(data, ext, caps)
         if ext in IMAGE_EXTS:
+            if OCR_IMAGES:
+                txt = _ocr_image(data)
+                lines = [l for l in txt.splitlines() if l.strip()] if txt else []
+                if len(txt.strip()) >= 20 and lines:
+                    return {"kind": "text", "always": [], "candidates": lines}
             return {"kind": "image", "always": [], "candidates": [], "note": "image (deferred)"}
     except Exception as e:
         return {"kind": "error", "always": [], "candidates": [], "note": f"parse error: {type(e).__name__}"}
@@ -587,6 +657,10 @@ def _parsed_files(pmcid, caps):
         _walk_zip(zf, caps, state, 0, _grab)
     except Exception:
         pass
+    if INCLUDE_LEGENDS:
+        legs = _legend_records(pmcid)
+        if legs:
+            files.append(("[figure/table legends]", {"kind": "text", "always": [], "candidates": legs}))
     result = {"files": files, "image_count": state["image_count"], "other_files": state["other_files"]}
     _cache_put(_PARSED_CACHE, pmcid, result)
     return result
