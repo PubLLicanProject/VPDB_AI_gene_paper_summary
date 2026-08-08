@@ -367,7 +367,7 @@ def generatePDs(summary_json: Dict[Any, Any], gene_text: str, n_pds: int = N_PDs
 
 
 def verifyPDs(suggested_pds: Dict[Any, Any], paper_text: str, gene_text: str,
-              use_caching: bool = True) -> Tuple[Optional[dict], dict, Optional[float]]:
+              use_caching: bool = True, supplementary_text: str = "") -> Tuple[Optional[dict], dict, Optional[float]]:
     """
     Verify and select product descriptions against paper evidence.
 
@@ -382,6 +382,12 @@ def verifyPDs(suggested_pds: Dict[Any, Any], paper_text: str, gene_text: str,
         paper_text: Full paper text (will be cached if use_caching=True)
         gene_text: Gene ID with aliases
         use_caching: Whether to cache paper text (should be True in batch mode)
+        supplementary_text: Gene-filtered supplementary-materials evidence (from
+            get_supplementary_text). MUST be supplied whenever the summary was generated
+            with supplements, otherwise the verifier judges supplement-derived PDs against
+            the main text alone and wrongly marks them UNSUPPORTED — most damaging for
+            "unlock" genes that are absent from the main text entirely. Appended to the
+            gene-specific (uncached) message so paper-text caching across genes is preserved.
 
     Returns:
         Tuple of (parsed_result, usage_dict, elapsed_seconds)
@@ -421,6 +427,22 @@ def verifyPDs(suggested_pds: Dict[Any, Any], paper_text: str, gene_text: str,
 
     if isinstance(user_prompts, str):
         user_prompts = [user_prompts]
+
+    # Feed the verifier the SAME supplementary evidence the summary saw. Appended to the
+    # gene-specific message (last prompt), NOT to PAPER_TEXT (prompt 0), so the cached
+    # paper-text block stays identical across genes of a paper.
+    if supplementary_text:
+        user_prompts = list(user_prompts)
+        user_prompts[-1] = (
+            f"{user_prompts[-1]}\n\n"
+            "<supplementary_materials>\n"
+            "The following gene-specific evidence was extracted from THIS paper's supplementary "
+            "materials (deposited tables/datasets/figures). Treat it as part of the paper's evidence "
+            "when assessing whether each PD is supported, and cite it in evidence_location "
+            "(e.g. 'Supplementary Table S2') where relevant.\n"
+            f"{supplementary_text}\n"
+            "</supplementary_materials>"
+        )
     # Call API with optional caching
     start = time.time()
 
@@ -624,6 +646,14 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                 aliases = get_gene_synonyms(gene_id, paper_text, host_db)
             gene_display = f"{gene_id}, also known as {', '.join(aliases)}" if aliases else gene_id
 
+            # Fetch gene-filtered supplement ONCE per gene, so BOTH getGeneSummary and verifyPDs
+            # see the same evidence. Feeding it only to the summary (as before) let the verifier
+            # judge supplement-derived PDs against the main text alone and wrongly discard them.
+            suppl_text = ""
+            if FETCH_SUPPLEMENTARY:
+                suppl_text = get_supplementary_text(pubmed_id, gene_id, aliases, host_db,
+                                                    caps=(SUPPLEMENTARY_CAPS or None)) or ""
+
             raw = None
             usage = {}
             elapsed = 0.0
@@ -647,16 +677,13 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                     prompt_type="SystemPrompt",
                 )
 
-                # Optionally augment with gene-filtered supplementary materials.
+                # Augment with gene-filtered supplementary materials (fetched once above).
                 # Appended to the gene-specific prompt (last message) so prompt[0]
                 # (the paper text) stays identical across genes and remains cacheable.
-                if FETCH_SUPPLEMENTARY:
-                    _suppl = get_supplementary_text(pubmed_id, gene_id, aliases, host_db,
-                                                    caps=(SUPPLEMENTARY_CAPS or None))
-                    if _suppl:
-                        user_prompts = list(user_prompts)
-                        user_prompts[-1] = f"{user_prompts[-1]}\n\n{_suppl}"
-                        print("📎+suppl", end=" ")
+                if suppl_text:
+                    user_prompts = list(user_prompts)
+                    user_prompts[-1] = f"{user_prompts[-1]}\n\n{suppl_text}"
+                    print("📎+suppl", end=" ")
 
                 if PROVIDER == "anthropic":
                     start = time.time()
@@ -788,6 +815,7 @@ def process_paper_with_caching(pubmed_id: str, gene_list: List[Tuple[str, str]],
                 paper_text=paper_text,
                 gene_text=gene_display,
                 use_caching=True,
+                supplementary_text=suppl_text,
             )
 
             if not verify_result:
@@ -939,6 +967,12 @@ def process_batch_fallback(pairs: List[Tuple[str, str, str]], save: bool = True)
             aliases = get_gene_synonyms(gene_id, paper_text, host_db)
             gene_display = f"{gene_id}, also known as {', '.join(aliases)}" if aliases else gene_id
 
+            # Fetch gene-filtered supplement once, so BOTH summary and verify see it (see note above).
+            suppl_text = ""
+            if FETCH_SUPPLEMENTARY:
+                suppl_text = get_supplementary_text(pubmed_id, gene_id, aliases, host_db,
+                                                    caps=(SUPPLEMENTARY_CAPS or None)) or ""
+
             existing_summary = None if OVERWRITE_EXISTING else load_existing_summary(pubmed_id, gene_id)
 
             if existing_summary is not None:
@@ -960,15 +994,12 @@ def process_batch_fallback(pairs: List[Tuple[str, str, str]], save: bool = True)
                     {"PAPER_TEXT": paper_text, "GENE": gene_display},
                     "UserPrompts",
                 )
-                # Optionally augment with gene-filtered supplementary materials
-                # (appended to the gene-specific prompt to keep prompt[0] cacheable).
-                if FETCH_SUPPLEMENTARY:
-                    _suppl = get_supplementary_text(pubmed_id, gene_id, aliases, host_db,
-                                                    caps=(SUPPLEMENTARY_CAPS or None))
-                    if _suppl:
-                        user_prompts = list(user_prompts)
-                        user_prompts[-1] = f"{user_prompts[-1]}\n\n{_suppl}"
-                        print("📎+suppl", end=" ")
+                # Augment with gene-filtered supplementary materials (fetched once above;
+                # appended to the gene-specific prompt to keep prompt[0] cacheable).
+                if suppl_text:
+                    user_prompts = list(user_prompts)
+                    user_prompts[-1] = f"{user_prompts[-1]}\n\n{suppl_text}"
+                    print("📎+suppl", end=" ")
                 # Call API
                 if PROVIDER == "anthropic":
                     start = time.time()
@@ -1100,7 +1131,8 @@ def process_batch_fallback(pairs: List[Tuple[str, str, str]], save: bool = True)
                     suggested_pds=pd_result,
                     paper_text=paper_text,
                     gene_text=gene_display,
-                    use_caching=False
+                    use_caching=False,
+                    supplementary_text=suppl_text,
                 )
 
                 if not verify_result:
