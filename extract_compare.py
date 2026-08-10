@@ -77,10 +77,15 @@ def gene_row_from_summary(pmid, gene_id, model, bullet, schema_followed=True):
     }
 
 
-def extract_rows(status_dir):
-    """Identical logic to extract_data.py's main loop, parameterised on the cache dir."""
+def extract_rows(status_dir, fnames=None):
+    """Identical logic to extract_data.py's main loop, parameterised on the cache dir.
+
+    fnames: optional iterable of specific filenames to read from status_dir (used to merge
+    a primary + fallback cache without double-counting). Defaults to every .json in the dir.
+    """
     gene_rows, pd_rows = [], []
-    for fname in sorted(os.listdir(status_dir)):
+    listing = sorted(fnames) if fnames is not None else sorted(os.listdir(status_dir))
+    for fname in listing:
         if not fname.endswith(".json"):
             continue
         pmid = fname.split(".")[0]
@@ -166,7 +171,12 @@ GENE_FIELDS = ["pmid", "gene_ID", "model", "bullet_point", "evidence_location",
                "supporting_quotes", "verification_status", "reason", "schema_followed"]
 PD_FIELDS = ["pmid", "gene_ID", "model", "PD_type", "description", "verification_status",
              "evidence_code", "code_reason", "audit_status", "audit_reason", "schema_followed"]
-OUTDIR = "out/wiht_vs_without_supplementary_comapriso"
+OUTDIR = "out/wiht_vs_without_supplementary_comaprison"
+# _withSUPP now comes from the RE-VERIFIED cache (corrected verifyPDs verdicts). reverify only wrote
+# papers that had generated PDs, so fall back to the original supplement rerun for the handful of
+# papers it didn't copy (they have no PD rows, only summary rows) -> complete + corrected coverage.
+REVERIFY_DIR = "out/VPDB_PD_verify_reverify/cache"
+RERUN_DIR = "out/VPDB_PD_supplementary_rerun/cache"
 
 
 def read_csv(path):
@@ -192,11 +202,17 @@ def main():
     print(f"_noSUPP: summary {len(nosupp_gene)} (base {len(base_gene)} + set_exp {len(se_gene)}), "
           f"PD {len(nosupp_pd)} (base {len(base_pd)} + set_exp {len(se_pd)})")
 
-    # 2) _withSUPP = supplementary rerun (with supplement)
-    ws_gene, ws_pd = extract_rows("out/VPDB_PD_supplementary_rerun/cache")
+    # 2) _withSUPP = RE-VERIFIED cache (corrected verifyPDs), + fallback rerun for papers not copied.
+    prim_files = [f for f in os.listdir(REVERIFY_DIR) if f.endswith(".json")]
+    prim_set = set(prim_files)
+    fb_files = [f for f in os.listdir(RERUN_DIR) if f.endswith(".json") and f not in prim_set]
+    g_a, p_a = extract_rows(REVERIFY_DIR, prim_files)
+    g_b, p_b = extract_rows(RERUN_DIR, fb_files)
+    ws_gene, ws_pd = g_a + g_b, p_a + p_b
     write_csv(f"{OUTDIR}/Summary_Quotes_by_model_full_withSUPP.csv", ws_gene, GENE_FIELDS)
     write_csv(f"{OUTDIR}/PD_rows_all_models_full_withSUPP.csv", ws_pd, PD_FIELDS)
-    print(f"_withSUPP: summary {len(ws_gene)}, PD {len(ws_pd)}")
+    print(f"_withSUPP: summary {len(ws_gene)}, PD {len(ws_pd)} "
+          f"(reverified {len(prim_files)} papers + fallback {len(fb_files)})")
 
     # 3) RPD change for (pmid, gene_ID) present in both
     def rpd_map(rows):
