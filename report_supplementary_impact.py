@@ -23,7 +23,7 @@ PRE = 'curated_data/all_PDs_with_PMID_2026_preprocessed.csv'
 RAW = 'curated_data/all_PDs_with_PMID_2026_to_preprocess.csv'
 UNLOCK = 'curated_data/all_PDs_with_PMID_2026_preprocessed_with_supplementary.csv'
 BOOST = 'curated_data/all_PDs_with_PMID_2026_supplementary_mention_boost.csv'
-BUCKETS = ['1 (single)', '2-5', '6-10', '>10']
+BUCKETS = ['1 (single)', '2-5', '6-10', '11-20', '21-50', '51-100', '>100']
 CATS = ['1_not_open_access', '2_OA_no_mention', '3_OA_with_mention']
 CAT_LBL = {'1_not_open_access': 'not open-access', '2_OA_no_mention': 'OA, gene not in text',
            '3_OA_with_mention': 'OA, gene in text'}
@@ -41,7 +41,13 @@ def _bucket(n):
         return '2-5'
     if n <= 10:
         return '6-10'
-    return '>10'
+    if n <= 20:
+        return '11-20'
+    if n <= 50:
+        return '21-50'
+    if n <= 100:
+        return '51-100'
+    return '>100'
 
 
 def _emb(path):
@@ -104,6 +110,42 @@ def impact_bucket_fig(u, b, path):
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
 
 
+def original_vs_unlocked_fig(pre, u, path):
+    """Side-by-side bars: what the ORIGINAL pipeline could use (OA + gene in main text) vs the pairs
+    supplements UNLOCK (gene absent from main text, recovered via a supplement mention). Left panel =
+    overall totals; right panel = the same comparison grouped by database."""
+    orig_db = pre[pre['category'] == CATS[2]].groupby('Database').size()
+    cand = u[u['avail'] & ~u['ait']]
+    unl_db = cand[cand['unlocked']].groupby('Database').size()
+    dbs = orig_db.sort_values(ascending=False).index.tolist()
+    orig = orig_db.reindex(dbs).fillna(0).astype(int)
+    unl = unl_db.reindex(dbs).fillna(0).astype(int)
+    orig_tot, unl_tot = int(orig.sum()), int(unl.sum())
+    C_ORIG, C_UNL = '#2a9d8f', '#e76f51'
+
+    fig, (axA, axB) = plt.subplots(
+        1, 2, figsize=(12, 4.6), gridspec_kw={'width_ratios': [1, max(2.4, len(dbs) * 0.75)]})
+    # Panel A: overall
+    axA.bar([0], [orig_tot], width=0.62, color=C_ORIG)
+    axA.bar([1], [unl_tot], width=0.62, color=C_UNL)
+    for xi, v in ((0, orig_tot), (1, unl_tot)):
+        axA.text(xi, v, f'{v:,}', ha='center', va='bottom', fontsize=9)
+    axA.set_xticks([0, 1]); axA.set_xticklabels(['Original', 'Unlocked'])
+    axA.set_title(f'Overall  (+{100 * unl_tot / max(orig_tot, 1):.1f}%)')
+    axA.set_ylabel('gene-paper pairs'); axA.margins(y=0.15)
+    axA.spines[['top', 'right']].set_visible(False)
+    # Panel B: grouped by database
+    x = range(len(dbs)); w = 0.4
+    axB.bar([i - w / 2 for i in x], orig, width=w, color=C_ORIG, label='Original (OA + gene in text)')
+    axB.bar([i + w / 2 for i in x], unl, width=w, color=C_UNL, label='Unlocked (supplement-only)')
+    axB.set_xticks(list(x)); axB.set_xticklabels(dbs, rotation=30, ha='right')
+    axB.set_title('By database'); axB.set_ylabel('gene-paper pairs'); axB.margins(y=0.12)
+    axB.legend(frameon=False, fontsize=9); axB.spines[['top', 'right']].set_visible(False)
+    fig.suptitle('Original usable vs supplement-unlocked pairs', y=1.02, fontsize=13)
+    fig.tight_layout(); fig.savefig(path, dpi=150, bbox_inches='tight'); plt.close(fig)
+    return orig_tot, unl_tot
+
+
 def filetype_fig(path):
     sets = [s for s in ('unlock', 'boost') if os.path.exists(os.path.join(OUTDIR, f'filetype_{s}.csv'))]
     if not sets:
@@ -163,6 +205,7 @@ def main():
     impact_db.to_csv(os.path.join(OUTDIR, 'impact_by_database.csv'))
     impact_bucket.to_csv(os.path.join(OUTDIR, 'impact_by_papersize.csv'))
     impact_bucket_fig(u, b, os.path.join(OUTDIR, 'fig_impact_by_papersize.png'))
+    original_vs_unlocked_fig(pre, u, os.path.join(OUTDIR, 'fig_original_vs_unlocked.png'))
     ftpath, fttabs = filetype_fig(os.path.join(OUTDIR, 'fig_filetype.png'))
 
     # ---- headline numbers ----
@@ -199,6 +242,7 @@ def main():
 
     figs = [('fig_coverage_by_db.png', 'Coverage by database'),
             ('fig_coverage_by_papersize.png', 'Coverage by paper size'),
+            ('fig_original_vs_unlocked.png', 'Original usable vs supplement-unlocked (overall + by database)'),
             ('fig_impact_by_papersize.png', 'Unlock/boost by paper size'),
             ('fig_filetype.png', 'Mentions by file type')]
     imgs = "".join(f'<figure><img src="{_emb(os.path.join(OUTDIR, f))}" style="max-width:100%"><figcaption>{c}</figcaption></figure>'
