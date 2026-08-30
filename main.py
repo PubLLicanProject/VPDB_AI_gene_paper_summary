@@ -298,10 +298,12 @@ def main():
         run_pipeline(
             pmid=args.pmid,
             gene_id=args.gene_id,
-            host_db = host_db,
+            host_db=args.host_db,
             save=args.save,
             verify_summary=args.verify_summary,
             generate_pd=args.generate_pd,
+            verify_pds=args.verify_pds,
+            select_pd=args.select_pd,
         )
 
     elif args.step == "test":

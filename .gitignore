@@ -160,3 +160,9 @@ cython_debug/
 #.idea/
 /.idea
 .idea/.name
+/out
+
+# One-off supplement-size analysis (script + its results; results also live under /out)
+measure_suppl_sizes.py
+out/supplementary_eval/suppl_sizes.csv
+out/supplementary_eval/_pmcids_with_suppl.json

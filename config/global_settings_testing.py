@@ -40,7 +40,7 @@ MODELS_TO_TEST = [
 
 
 # additional model to force correct JSON schema if original LLM fails; attempt this up to max_retry times
-formatter_llm = ["anthropic", "claude-sonnet-4-20250514"]
+formatter_llm = ["anthropic", "claude-sonnet-4-5"]
 max_retry = 5
 
 
@@ -59,6 +59,10 @@ GENE = "PF3D7_0810800" # example
 # here is an example, we retrieve these from VEuPathDB: f"{GENE}, also known as {ALIASES}" # ALIASES =  PPPK-DHPS, or PF08_0095
 N_QUOTES = 2 # how many quotes per claim to be extracted
 N_PDs = 5 # up to how many suggested product descriptions to be assigned before selection
+
+# --- Supplementary materials (opt-in) ---
+FETCH_SUPPLEMENTARY = False  # fetch + gene-filter PMC supplementary files into the summary input
+SUPPLEMENTARY_CAPS = {}      # optional overrides for supplementary_helpers.DEFAULT_CAPS
 # initiate schema as empty string, each workflow stage has different schema
 JSON_SCHEMA = "" # schema as string to append to the system prompt; stored in the prompts and schema dict and will be updated for each workflow step as needed.
 

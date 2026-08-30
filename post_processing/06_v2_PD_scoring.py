@@ -38,15 +38,15 @@ from gene_lookup import find
 #                             CONFIGURATION                                   #
 # --------------------------------------------------------------------------- #
 print("Configuring ...")
-INPUT_FILE = "./out/model_comparison_speacies_balanced/extracted/PD_rows_all_models_incsonnet4.csv" #
-OUTPUT_FILE = "./out/model_comparison_speacies_balanced/scored/PDs_scored_all_models_withSonnet4.csv.csv"
+INPUT_FILE = "./out/large_scale_PD_results/Tianhui_results_final.csv" #
+OUTPUT_FILE = "./out/large_scale_PD_results/Tianhui_results_final_scored.csv"
 ## for getting descriptions
-VEUPATH_CSV = "./veupath_df_from_training.csv"      #
+VEUPATH_CSV = "./curated_data/VPDB_PDs_withPMID.csv"      #
 GAF_CSV     = "./curated_data/GAF_species_of_interest_withPMIDs.csv"  #
 
 GENE_ID_FIELD = "gene_ID"  # column to use for getting synonym
-FIELDS_TO_SCORE: List[str] = ["RPD", "SPD", "UPD"]
-TARGET_FIELD: str = "Official_Description"           # "Official_Description" or Product
+FIELDS_TO_SCORE: List[str] =  ["RPD"] # ["RPD", "SPD", "UPD"]
+TARGET_FIELD: str = "Official_Description"  # "Official_Description" or Product
 
 DB_PATH = r"C:/Users/jtzve/Desktop/PubLLican/LLM_testbed_JT/gene_lookup/gene_lookup.db"
 
@@ -56,7 +56,7 @@ BACKEND = "threading"
 
 HF_MODELS = [
     "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext",
-    "pritamdeka/S-BioBert-snli-multinli-stsb",
+    # "pritamdeka/S-BioBert-snli-multinli-stsb",
 ]
 
 RANDOM_SEED = 42
@@ -238,6 +238,10 @@ def one_word_off(a: str, b: str) -> float:
     if not a or not b:
         return np.nan
 
+    # If it's an exact match, return 0 (not one-word-off)
+    if a == b:
+        return 0.0
+
     toks_a = a.split()
     toks_b = b.split()
 
@@ -335,13 +339,25 @@ def _pivot_to_wide(group):
     })
 
 raw_df = pd.read_csv(INPUT_FILE)
+
+raw_df = raw_df.rename(columns={
+    "gene_ID": "gene_ID",
+    "PD_type": "PD_Type",
+    "LLM_Description": "description"
+})
 #####################
 # Then ensure the groupby uses all three keys:
-df = (raw_df
-      .query("PD_type in ['RPD', 'APD', 'selected_PD', 'raw_PD']")
-      .groupby(["pmid", "gene_ID", "model"], sort=False)
-      .apply(_pivot_to_wide)
-      .reset_index(drop=True))
+df = (
+    raw_df
+      .query("PD_Type in ['RPD', 'APD', 'selected_PD', 'raw_PD']")
+      .pivot_table(
+          index=["pmid", "gene_ID", "model"],
+          columns="PD_Type",
+          values="description",
+          aggfunc="first"
+      )
+      .reset_index()
+)
 # --- NEW robust two-tier mapping of original descriptions
 official_lookup = {}
 
@@ -373,6 +389,7 @@ df["Official_Description"] = df.apply(
 all_text_cols = FIELDS_TO_SCORE + [TARGET_FIELD]
 df[all_text_cols] = df[all_text_cols].fillna("")
 
+df.columns
 # Ensure Gene_ID is str for dict lookup
 df[GENE_ID_FIELD] = df[GENE_ID_FIELD].astype(str)
 
@@ -399,6 +416,54 @@ tfidf_vectorizer = TfidfVectorizer(
 ).fit(tfidf_corpus)
 print("TF‑IDF vectorizer fitted")
 
+
+# --------------------------------------------------------------------------- #
+#                    PRECOMPUTE SYMBOL-FREE TEXT + EMBEDDINGS                 #
+# --------------------------------------------------------------------------- #
+# NEW: stop bug when scoring lots of descriptions in parallel
+print("Preparing symbol-free text for embedding lookups ...")
+
+df[f"Raw_{TARGET_FIELD}"] = df[TARGET_FIELD].astype(str).str.lower()
+df[f"NoSym_{TARGET_FIELD}"] = df.apply(
+    lambda r: strip_gene_symbols(df.at[r.name, TARGET_FIELD].lower(), str(r[GENE_ID_FIELD])),
+    axis=1
+)
+
+for field in FIELDS_TO_SCORE:
+    df[f"Raw_{field}"] = df[field].astype(str).str.lower()
+    df[f"NoSym_{field}"] = df.apply(
+        lambda r: strip_gene_symbols(df.at[r.name, field].lower(), str(r[GENE_ID_FIELD])),
+        axis=1
+    )
+
+# Unique texts to encode once
+texts_to_encode = df[f"NoSym_{TARGET_FIELD}"].fillna("").tolist()
+for field in FIELDS_TO_SCORE:
+    texts_to_encode.extend(df[f"NoSym_{field}"].fillna("").tolist())
+
+# De-duplicate while preserving order
+texts_to_encode = list(dict.fromkeys(texts_to_encode))
+
+# Optional: skip empty string from model encoding
+texts_for_model = [t for t in texts_to_encode if t.strip()]
+
+print(f"Precomputing embeddings for {len(texts_for_model):,} unique texts ...")
+
+embedding_maps = []
+for model_idx, model in enumerate(st_models, start=1):
+    print(f"  Encoding with model {model_idx}/{len(st_models)} ...")
+    embs = model.encode(
+        texts_for_model,
+        batch_size=64,
+        convert_to_numpy=True,
+        show_progress_bar=True,
+    )
+    emb_map = {txt: emb for txt, emb in zip(texts_for_model, embs)}
+    emb_map[""] = None
+    embedding_maps.append(emb_map)
+
+print("Embedding cache ready")
+
 # --------------------------------------------------------------------------- #
 #                                   SCORING                                   #
 # --------------------------------------------------------------------------- #
@@ -411,8 +476,11 @@ def score_row(row: pd.Series) -> Dict[str, Any]:
     target_clean = row[f"Clean_{TARGET_FIELD}"]           # lemma string
     target_tokens = target_clean.split()
 
-    target_embs = [m.encode(nosym_target) for m in st_models]   # BERT on nosym
-
+    # target_embs = [m.encode(nosym_target) for m in st_models]   # BERT on nosym
+    target_embs = [
+        emb_map.get(nosym_target, None)
+        for emb_map in embedding_maps
+    ]
     # ---------- iterate over candidate fields ------------------------
     for field in FIELDS_TO_SCORE:
         raw_cand   = str(row[field]).lower()
@@ -439,7 +507,11 @@ def score_row(row: pd.Series) -> Dict[str, Any]:
         out[f"SemSim_{field}_tfidf_cosine"] = tfidf_cosine(raw_cand, raw_target, tfidf_vectorizer)
 
         # BERT embeddings on symbol‑free lowercase
-        cand_embs = [m.encode(nosym_cand) for m in st_models]
+        # cand_embs = [m.encode(nosym_cand) for m in st_models]
+        cand_embs = [
+            emb_map.get(nosym_cand, None)
+            for emb_map in embedding_maps
+        ]
         for idx, (ce, te) in enumerate(zip(cand_embs, target_embs), start=1):
             out[f"SemSim_{field}_embed{idx}_cosine"] = embed_cosine(ce, te)
 
