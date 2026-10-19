@@ -6,6 +6,10 @@ An LLM-powered automated pipeline for generating gene product descriptions from 
 
 This pipeline automates the extraction of gene-specific information from research papers and generates standardised product descriptions (PDs) using large language models (LLMs). It supports multiple workflow stages and comprehensive testing across different LLM providers.
 
+For a description of the scripts used for the manuscript and their contribution to it, see [`Scripts_Used_For_Manuscript.md`](Scripts_Used_For_Manuscript.md).
+
+API keys are read from `.env`, which is not distributed; see `.env.example` for the variable names. The user-comment tables in `curated_data/` are distributed without their commenter-identity columns, and the `curated_data/*_precheck.csv` intermediates are not distributed at all.
+
 ## Features
 
 - **Multi-stage workflow**: Summary generation → PD brainstorming → PD verification + selection (with optional summary verification and swap-out selection criteria)
@@ -75,7 +79,6 @@ python main.py single --pmid 12345678 --gene_id PF3D7_0810800 --host_db plasmodb
 ```
 ## Post-processing
 To extract results and score PDs, the scripts in post_processing/ can be used
-
 
 ## License
 MIT License

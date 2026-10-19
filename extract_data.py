@@ -5,10 +5,10 @@ Handles OpenRouter model naming and error responses
 import os, json, csv, pathlib
 
 # CONFIG
-STATUS_DIR = "./out/summaries"
-OUT_DIR = "./out/summaries/extracted"
-GENE_CSV = pathlib.Path(OUT_DIR, "Summary_Quotes_by_model_full.csv")
-PD_CSV = pathlib.Path(OUT_DIR, "PD_rows_all_models_full.csv")
+STATUS_DIR = "./out/user_comment_evaluation"
+OUT_DIR = "./out/user_comment_evaluation/extracted"
+GENE_CSV = pathlib.Path(OUT_DIR, "Summary_Quotes_by_model_user_comments.csv")
+PD_CSV = pathlib.Path(OUT_DIR, "PD_rows_user_comments.csv")
 
 os.makedirs(OUT_DIR, exist_ok=True)
 
